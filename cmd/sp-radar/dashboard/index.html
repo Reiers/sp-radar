@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SP Radar</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0f;color:#e0e0e0}
+.c{max-width:1200px;margin:0 auto;padding:2rem}
+h1{font-size:2rem;margin-bottom:.5rem}h1 span{color:#22d3ee}
+.sub{color:#888;margin-bottom:2rem}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:2rem}
+.card{background:#1a1a2e;border-radius:12px;padding:1.2rem;border:1px solid #2a2a3e}
+.card .l{font-size:.8rem;color:#888;text-transform:uppercase;letter-spacing:.05em}
+.card .v{font-size:1.8rem;font-weight:700;margin-top:.2rem}
+.card .d{font-size:.8rem;color:#666;margin-top:.2rem}
+.curio{color:#22d3ee}.boost{color:#f59e0b}.venus{color:#a78bfa}
+.cb{background:#1a1a2e;border-radius:12px;padding:1.2rem;border:1px solid #2a2a3e;margin-bottom:2rem}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:.6rem;color:#888;font-size:.8rem;border-bottom:1px solid #2a2a3e}
+td{padding:.6rem;border-bottom:1px solid #151520}
+.bar{height:6px;border-radius:3px;background:#2a2a3e}.bar .f{height:100%;border-radius:3px}
+.ts{color:#555;font-size:.8rem;text-align:center;margin-top:1rem}
+</style>
+</head>
+<body>
+<div class="c">
+<h1>📡 <span>SP Radar</span></h1>
+<p class="sub">Filecoin Storage Provider Network Scanner</p>
+<div id="a">Loading...</div>
+</div>
+<script>
+const C={curio:'#22d3ee',boost:'#f59e0b',venus:'#a78bfa',markets:'#6b7280',unknown:'#4b5563'};
+async function go(){try{
+const r=await fetch('/api/latest');if(!r.ok)throw 0;const d=await r.json();show(d);
+const h=await fetch('/api/history');if(h.ok){const x=await h.json();if(x&&x.length>1)chart(x)}
+}catch(e){document.getElementById('a').textContent='Waiting for scan...';setTimeout(go,5000)}}
+function show(d){
+const s=d.software,t=d.total_sps_scanned||1;
+const I=[['Curio','curio',s.curio],['Boost','boost',s.boost],['Venus','venus',s.venus],['Markets','markets',s.markets],['Unknown','unknown',s.unknown]];
+let h='<div class="g">';
+for(const[n,c,v]of I)h+=`<div class="card"><div class="l">${n}</div><div class="v ${c}">${v.count}</div><div class="d">${v.quality_adj_power_pib.toFixed(2)} PiB (${(v.count/t*100).toFixed(1)}%)</div></div>`;
+h+=`<div class="card"><div class="l">Total SPs</div><div class="v">${d.total_sps_on_chain.toLocaleString()}</div><div class="d">${d.total_sps_with_min_power.toLocaleString()} with min power</div></div></div>`;
+h+='<div class="cb"><canvas id="hc"></canvas></div>';
+h+='<div class="card"><table><thead><tr><th>Software</th><th>Nodes</th><th>QAP (PiB)</th><th>Share</th><th></th></tr></thead><tbody>';
+for(const[n,c,v]of I){const p=(v.count/t*100).toFixed(1);h+=`<tr><td style="color:${C[c]}">${n}</td><td>${v.count}</td><td>${v.quality_adj_power_pib.toFixed(2)}</td><td>${p}%</td><td><div class="bar"><div class="f" style="width:${p}%;background:${C[c]}"></div></div></td></tr>`}
+h+='</tbody></table></div>';
+h+=`<p class="ts">Last scan: ${new Date(d.timestamp).toLocaleString()}</p>`;
+document.getElementById('a').innerHTML=h}
+function chart(H){const c=document.getElementById('hc');if(!c)return;
+new Chart(c,{type:'line',data:{labels:H.map(h=>new Date(h.timestamp).toLocaleDateString()),datasets:[
+{label:'Curio',data:H.map(h=>h.software.curio.count),borderColor:'#22d3ee',tension:.3},
+{label:'Boost',data:H.map(h=>h.software.boost.count),borderColor:'#f59e0b',tension:.3},
+{label:'Venus',data:H.map(h=>h.software.venus.count),borderColor:'#a78bfa',tension:.3}]},
+options:{responsive:true,plugins:{legend:{labels:{color:'#888'}}},scales:{x:{ticks:{color:'#666'},grid:{color:'#1a1a2e'}},y:{ticks:{color:'#666'},grid:{color:'#2a2a3e'}}}}})}
+go();setInterval(go,60000);
+</script>
+</body>
+</html>
