@@ -3,59 +3,142 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SP Radar</title>
+<title>SP Radar - Filecoin Network Scanner</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0f;color:#e0e0e0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0f;color:#e0e0e0;min-height:100vh}
 .c{max-width:1200px;margin:0 auto;padding:2rem}
-h1{font-size:2rem;margin-bottom:.5rem}h1 span{color:#22d3ee}
-.sub{color:#888;margin-bottom:2rem}
-.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:2rem}
-.card{background:#1a1a2e;border-radius:12px;padding:1.2rem;border:1px solid #2a2a3e}
-.card .l{font-size:.8rem;color:#888;text-transform:uppercase;letter-spacing:.05em}
-.card .v{font-size:1.8rem;font-weight:700;margin-top:.2rem}
-.card .d{font-size:.8rem;color:#666;margin-top:.2rem}
-.curio{color:#22d3ee}.boost{color:#f59e0b}.venus{color:#a78bfa}
-.cb{background:#1a1a2e;border-radius:12px;padding:1.2rem;border:1px solid #2a2a3e;margin-bottom:2rem}
+.hdr{display:flex;align-items:center;gap:1rem;margin-bottom:.3rem}
+.hdr h1{font-size:2.2rem;font-weight:700;letter-spacing:-.02em}
+.hdr h1 span{background:linear-gradient(135deg,#22d3ee,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:#666;margin-bottom:2rem;font-size:.95rem}
+.status{display:inline-flex;align-items:center;gap:.4rem;background:#1a1a2e;padding:.3rem .8rem;border-radius:20px;font-size:.8rem;color:#888;margin-left:1rem}
+.status .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.status.off .dot{background:#ef4444;animation:none}
+
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:2rem}
+.card{background:#1a1a2e;border-radius:14px;padding:1.4rem;border:1px solid #2a2a3e;transition:border-color .2s}
+.card:hover{border-color:#3a3a5e}
+.card .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem}
+.card .l{font-size:.75rem;color:#888;text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.card .logo{width:28px;height:28px;object-fit:contain;opacity:.8}
+.card .v{font-size:2rem;font-weight:800;line-height:1}
+.card .d{font-size:.8rem;color:#555;margin-top:.4rem}
+.card .pwr{font-size:.85rem;color:#999;margin-top:.2rem}
+
+.curio .v{color:#22d3ee}
+.boost .v{color:#f59e0b}
+.venus .v{color:#a78bfa}
+.markets .v{color:#6b7280}
+.unknown .v{color:#4b5563}
+.total .v{color:#e0e0e0}
+
+.panel{background:#1a1a2e;border-radius:14px;padding:1.4rem;border:1px solid #2a2a3e;margin-bottom:2rem}
+.panel h2{font-size:1rem;color:#888;font-weight:600;margin-bottom:1rem;text-transform:uppercase;letter-spacing:.05em}
+
 table{width:100%;border-collapse:collapse}
-th{text-align:left;padding:.6rem;color:#888;font-size:.8rem;border-bottom:1px solid #2a2a3e}
-td{padding:.6rem;border-bottom:1px solid #151520}
-.bar{height:6px;border-radius:3px;background:#2a2a3e}.bar .f{height:100%;border-radius:3px}
-.ts{color:#555;font-size:.8rem;text-align:center;margin-top:1rem}
+th{text-align:left;padding:.7rem .6rem;color:#666;font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #2a2a3e}
+td{padding:.7rem .6rem;border-bottom:1px solid #151525;font-size:.9rem}
+tr:hover td{background:rgba(34,211,238,.03)}
+.sw-name{display:flex;align-items:center;gap:.6rem;font-weight:600}
+.sw-name .logo-sm{width:20px;height:20px;object-fit:contain;opacity:.7}
+.bar{height:8px;border-radius:4px;background:#151525;min-width:100px}
+.bar .f{height:100%;border-radius:4px;transition:width .5s ease}
+
+.ver-list{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.2rem}
+.ver-tag{font-size:.7rem;background:#151525;color:#888;padding:.15rem .5rem;border-radius:8px}
+
+.ts{color:#444;font-size:.8rem;text-align:center;margin-top:1.5rem}
+.ts a{color:#555;text-decoration:none}
+.ts a:hover{color:#22d3ee}
+
+.loader{display:flex;flex-direction:column;align-items:center;justify-content:center;height:50vh;gap:1rem}
+.loader .spin{width:40px;height:40px;border:3px solid #2a2a3e;border-top-color:#22d3ee;border-radius:50%;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.loader p{color:#666}
 </style>
 </head>
 <body>
 <div class="c">
+<div class="hdr">
 <h1>📡 <span>SP Radar</span></h1>
+<div class="status off" id="st"><div class="dot"></div><span>Waiting</span></div>
+</div>
 <p class="sub">Filecoin Storage Provider Network Scanner</p>
-<div id="a">Loading...</div>
+<div id="a"><div class="loader"><div class="spin"></div><p>Waiting for first scan...</p></div></div>
 </div>
 <script>
 const C={curio:'#22d3ee',boost:'#f59e0b',venus:'#a78bfa',markets:'#6b7280',unknown:'#4b5563'};
+const LOGOS={curio:'assets/curio_logo.svg',boost:'assets/boost-logo.avif',venus:'assets/venus-logo.png'};
+let hChart=null;
+
 async function go(){try{
 const r=await fetch('/api/latest');if(!r.ok)throw 0;const d=await r.json();show(d);
-const h=await fetch('/api/history');if(h.ok){const x=await h.json();if(x&&x.length>1)chart(x)}
-}catch(e){document.getElementById('a').textContent='Waiting for scan...';setTimeout(go,5000)}}
+document.querySelector('#st').className='status';
+document.querySelector('#st span').textContent='Live';
+const h=await fetch('/api/history');if(h.ok){const x=await h.json();if(x&&x.length>0)chart(x)}
+}catch(e){setTimeout(go,5000)}}
+
+function fmt(n){if(n>=1000)return(n/1000).toFixed(1)+'K';return n.toLocaleString()}
+
 function show(d){
 const s=d.software,t=d.total_sps_scanned||1;
-const I=[['Curio','curio',s.curio],['Boost','boost',s.boost],['Venus','venus',s.venus],['Markets','markets',s.markets],['Unknown','unknown',s.unknown]];
+const items=[
+ ['Curio','curio',s.curio],
+ ['Boost','boost',s.boost],
+ ['Venus','venus',s.venus],
+ ['Markets','markets',s.markets],
+ ['Unknown','unknown',s.unknown]
+];
+const totalPower=items.reduce((a,x)=>a+x[2].quality_adj_power_pib,0);
+
 let h='<div class="g">';
-for(const[n,c,v]of I)h+=`<div class="card"><div class="l">${n}</div><div class="v ${c}">${v.count}</div><div class="d">${v.quality_adj_power_pib.toFixed(2)} PiB (${(v.count/t*100).toFixed(1)}%)</div></div>`;
-h+=`<div class="card"><div class="l">Total SPs</div><div class="v">${d.total_sps_on_chain.toLocaleString()}</div><div class="d">${d.total_sps_with_min_power.toLocaleString()} with min power</div></div></div>`;
-h+='<div class="cb"><canvas id="hc"></canvas></div>';
-h+='<div class="card"><table><thead><tr><th>Software</th><th>Nodes</th><th>QAP (PiB)</th><th>Share</th><th></th></tr></thead><tbody>';
-for(const[n,c,v]of I){const p=(v.count/t*100).toFixed(1);h+=`<tr><td style="color:${C[c]}">${n}</td><td>${v.count}</td><td>${v.quality_adj_power_pib.toFixed(2)}</td><td>${p}%</td><td><div class="bar"><div class="f" style="width:${p}%;background:${C[c]}"></div></div></td></tr>`}
+for(const[name,cls,v]of items){
+ const logo=LOGOS[cls]?`<img class="logo" src="${LOGOS[cls]}" alt="${name}">`:''
+ const pct=(v.count/t*100).toFixed(1);
+ const pwrPct=totalPower>0?(v.quality_adj_power_pib/totalPower*100).toFixed(1):'0.0';
+ h+=`<div class="card ${cls}"><div class="top"><div class="l">${name}</div>${logo}</div><div class="v">${fmt(v.count)}</div><div class="pwr">${v.quality_adj_power_pib.toFixed(1)} PiB</div><div class="d">${pct}% of SPs &middot; ${pwrPct}% of power</div></div>`;
+}
+h+=`<div class="card total"><div class="top"><div class="l">Total On-Chain</div></div><div class="v">${fmt(d.total_sps_on_chain)}</div><div class="pwr">${fmt(d.total_sps_with_min_power)} with min power</div><div class="d">${fmt(d.total_sps_scanned)} reachable</div></div></div>`;
+
+h+='<div class="panel"><h2>Trend</h2><canvas id="hc" height="80"></canvas></div>';
+
+h+='<div class="panel"><h2>Breakdown</h2><table><thead><tr><th>Software</th><th style="text-align:right">Nodes</th><th style="text-align:right">QAP (PiB)</th><th style="text-align:right">Share</th><th style="width:30%"></th></tr></thead><tbody>';
+for(const[name,cls,v]of items){
+ const pct=(v.count/t*100).toFixed(1);
+ const logo=LOGOS[cls]?`<img class="logo-sm" src="${LOGOS[cls]}" alt="">`:''
+ h+=`<tr>
+  <td><div class="sw-name" style="color:${C[cls]}">${logo}${name}</div></td>
+  <td style="text-align:right">${v.count.toLocaleString()}</td>
+  <td style="text-align:right">${v.quality_adj_power_pib.toFixed(2)}</td>
+  <td style="text-align:right">${pct}%</td>
+  <td><div class="bar"><div class="f" style="width:${pct}%;background:${C[cls]}"></div></div></td>
+ </tr>`;
+}
 h+='</tbody></table></div>';
-h+=`<p class="ts">Last scan: ${new Date(d.timestamp).toLocaleString()}</p>`;
-document.getElementById('a').innerHTML=h}
-function chart(H){const c=document.getElementById('hc');if(!c)return;
-new Chart(c,{type:'line',data:{labels:H.map(h=>new Date(h.timestamp).toLocaleDateString()),datasets:[
-{label:'Curio',data:H.map(h=>h.software.curio.count),borderColor:'#22d3ee',tension:.3},
-{label:'Boost',data:H.map(h=>h.software.boost.count),borderColor:'#f59e0b',tension:.3},
-{label:'Venus',data:H.map(h=>h.software.venus.count),borderColor:'#a78bfa',tension:.3}]},
-options:{responsive:true,plugins:{legend:{labels:{color:'#888'}}},scales:{x:{ticks:{color:'#666'},grid:{color:'#1a1a2e'}},y:{ticks:{color:'#666'},grid:{color:'#2a2a3e'}}}}})}
-go();setInterval(go,60000);
+
+const scanDur=d.scan_duration_seconds?`Scan took ${d.scan_duration_seconds.toFixed(0)}s`:'';
+h+=`<p class="ts">Last scan: ${new Date(d.timestamp).toLocaleString()} ${scanDur?'&middot; '+scanDur:''} &middot; <a href="https://github.com/Reiers/sp-radar" target="_blank">GitHub</a></p>`;
+document.getElementById('a').innerHTML=h;
+}
+
+function chart(H){
+const c=document.getElementById('hc');if(!c)return;
+if(hChart)hChart.destroy();
+const labels=H.map(h=>{const d=new Date(h.timestamp);return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})});
+hChart=new Chart(c,{type:'line',data:{labels,datasets:[
+ {label:'Curio',data:H.map(h=>h.software.curio.count),borderColor:'#22d3ee',backgroundColor:'rgba(34,211,238,.1)',fill:true,tension:.3,pointRadius:2},
+ {label:'Boost',data:H.map(h=>h.software.boost.count),borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,.1)',fill:true,tension:.3,pointRadius:2},
+ {label:'Venus',data:H.map(h=>h.software.venus.count),borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,.1)',fill:true,tension:.3,pointRadius:2}
+]},options:{responsive:true,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:'#888',usePointStyle:true,pointStyle:'circle',padding:20}}},scales:{
+ x:{ticks:{color:'#555',maxRotation:0},grid:{color:'#1a1a2e'}},
+ y:{beginAtZero:true,ticks:{color:'#555'},grid:{color:'#1a1a2e'}}
+}}});
+}
+
+go();setInterval(go,30000);
 </script>
 </body>
 </html>
