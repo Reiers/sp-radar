@@ -1,0 +1,6 @@
+sp-radar
+*.exe
+*.test
+*.out
+.DS_Store
+vendor/
