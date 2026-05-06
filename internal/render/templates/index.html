@@ -49,6 +49,55 @@
   </p>
 </section>
 
+<!-- ======================== NETWORK TRUTH ======================== -->
+{{if .NetworkTruth}}
+<section id="network-truth" class="network-truth">
+  <h2 class="section-title">Network truth · chain epoch {{.NetworkTruth.HeadEpoch}}</h2>
+  <div class="truth-grid">
+    <div class="truth-cell">
+      <div class="truth-num">{{printf "%.0f" .NetworkTruth.RawPiB}}<span class="truth-unit">PiB</span></div>
+      <div class="truth-label">Raw byte power</div>
+      <div class="truth-sub">All sealed sectors, network-wide</div>
+    </div>
+    <div class="truth-cell">
+      <div class="truth-num">{{printf "%.0f" .NetworkTruth.QAPiB}}<span class="truth-unit">PiB</span></div>
+      <div class="truth-label">Quality-adjusted</div>
+      <div class="truth-sub">Verified deals get 10× weight</div>
+    </div>
+    <div class="truth-cell">
+      <div class="truth-num">{{printf "%.0f" .NetworkTruth.VerifiedRawPiBEstimate}}<span class="truth-unit">PiB</span></div>
+      <div class="truth-label">Verified-deal data <em>(est.)</em></div>
+      <div class="truth-sub">From (QA - raw) / 9</div>
+    </div>
+    <div class="truth-cell">
+      <div class="truth-num">{{commaInt .NetworkTruth.NextDealID}}</div>
+      <div class="truth-label">Total deals on chain</div>
+      <div class="truth-sub">Lifetime; active set is a sliding window</div>
+    </div>
+    <div class="truth-cell">
+      <div class="truth-num">{{commaInt .NetworkTruth.NextAllocationID}}</div>
+      <div class="truth-label">DataCap allocations</div>
+      <div class="truth-sub">Issued by FIL+ allocators</div>
+    </div>
+    <div class="truth-cell">
+      <div class="truth-num">{{commaFloat .NetworkTruth.PledgeFIL 0}}<span class="truth-unit">FIL</span></div>
+      <div class="truth-label">Total SP pledge</div>
+      <div class="truth-sub">Locked in storage power actor (f04)</div>
+    </div>
+    <div class="truth-cell">
+      <div class="truth-num">{{commaFloat .NetworkTruth.MarketLockedFIL 0}}<span class="truth-unit">FIL</span></div>
+      <div class="truth-label">Provider deal collateral</div>
+      <div class="truth-sub">Locked in storage market actor (f05)</div>
+    </div>
+    <div class="truth-cell">
+      <div class="truth-num">{{commaInt .NetworkTruth.MinerAboveMinPower}}<span class="truth-unit"><span class="truth-of">/</span>{{commaInt .NetworkTruth.MinerCount}}</span></div>
+      <div class="truth-label">Active miners on chain</div>
+      <div class="truth-sub">{{commaInt .NetworkTruth.MinerCount}} ever registered</div>
+    </div>
+  </div>
+</section>
+{{end}}
+
 <!-- ======================== KPIs ======================== -->
 <section class="kpis">
   <div class="kpi">

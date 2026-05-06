@@ -143,6 +143,8 @@ func Render(snap *snapshot.Snapshot, outDir string) error {
 		"powerPiB":          powerPiB,
 		"powerPctOfNetwork": powerPctOfNetwork,
 		"topNStrings":       topNStrings,
+		"commaInt":          commaInt,
+		"commaFloat":        commaFloat,
 	}
 	tpl, err := template.New("index").Funcs(funcs).Parse(string(tplBytes))
 	if err != nil {
@@ -204,6 +206,43 @@ func powerPctOfNetwork(rowPower string, all []snapshot.Operator) string {
 	den := new(big.Float).SetInt(total)
 	pct, _ := new(big.Float).Quo(new(big.Float).Mul(num, big.NewFloat(100)), den).Float64()
 	return fmt.Sprintf("%.2f%%", pct)
+}
+
+// commaInt formats an int64 with thousands separators (e.g. 1,234,567).
+func commaInt(n int64) string {
+	if n < 0 {
+		return "-" + commaInt(-n)
+	}
+	s := fmt.Sprintf("%d", n)
+	out := ""
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			out += ","
+		}
+		out += string(c)
+	}
+	return out
+}
+
+// commaFloat formats a float with thousands separators and given decimal places.
+func commaFloat(f float64, decimals int) string {
+	if decimals == 0 {
+		return commaInt(int64(f))
+	}
+	whole := int64(f)
+	frac := f - float64(whole)
+	if frac < 0 {
+		frac = -frac
+	}
+	return fmt.Sprintf("%s.%0*d", commaInt(whole), decimals, int64(frac*pow10(decimals)+0.5))
+}
+
+func pow10(n int) float64 {
+	x := 1.0
+	for i := 0; i < n; i++ {
+		x *= 10
+	}
+	return x
 }
 
 // topNStrings returns the first n elements of a string slice, joined with ", ".

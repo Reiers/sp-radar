@@ -27,6 +27,11 @@ type Snapshot struct {
 	// On-chain context the run was based on
 	ChainHead ChainHead `json:"chain_head"`
 
+	// NetworkTruth is the chain-truth snapshot of the network's aggregate
+	// state (raw/QA power, pledge, deals, allocations). Cheap (3 RPC calls)
+	// and the most informative single section for a viewer.
+	NetworkTruth *NetworkTruth `json:"network_truth,omitempty"`
+
 	// Per-phase results
 	SPs        []SPRecord        `json:"sps"`
 	ChainNodes []ChainNodeRecord `json:"chain_nodes"`
@@ -154,6 +159,36 @@ type FoCNodeRecord struct {
 	ResolvedIPs   []string `json:"resolved_ips,omitempty"`
 	GeoIP         []GeoRow `json:"geoip,omitempty"`
 	LocationMatch string   `json:"location_match,omitempty"` // "match" | "mismatch" | "unknown"
+}
+
+// NetworkTruth holds the chain-aggregate numbers from f04 / f05 / f06.
+type NetworkTruth struct {
+	HeadEpoch              int64  `json:"head_epoch"`
+
+	// Power (bytes, big-int decimal strings)
+	TotalRawBytePower      string `json:"total_raw_byte_power"`
+	TotalQualityAdjPower   string `json:"total_quality_adj_power"`
+	TotalPledgeCollateral  string `json:"total_pledge_collateral_attofil"`
+	MinerCount             int64  `json:"miner_count"`
+	MinerAboveMinPower     int64  `json:"miner_above_min_power_count"`
+
+	// f05 storage market
+	StorageMarketBalance   string `json:"storage_market_balance_attofil"`
+	StorageMarketLocked    string `json:"storage_market_locked_attofil"`
+	StorageMarketLastCron  int64  `json:"storage_market_last_cron"`
+	NextDealID             int64  `json:"next_deal_id"`
+
+	// f06 verified registry
+	NextAllocationID       int64  `json:"next_allocation_id"`
+	VerifiedRootKey        string `json:"verified_root_key"`
+
+	// Pre-computed pretty values for templates (avoid bigint maths in HTML).
+	RawPiB                 float64 `json:"raw_pib"`
+	QAPiB                  float64 `json:"qa_pib"`
+	VerifiedRawPiBEstimate float64 `json:"verified_raw_pib_est"`
+	PledgeFIL              float64 `json:"pledge_fil"`
+	MarketBalanceFIL       float64 `json:"market_balance_fil"`
+	MarketLockedFIL        float64 `json:"market_locked_fil"`
 }
 
 // Operator is one deduplicated entity that controls one or more miner IDs.

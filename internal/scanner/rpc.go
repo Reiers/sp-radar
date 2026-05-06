@@ -90,6 +90,20 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
+// RawCall is the public escape hatch that lets out-of-package callers issue
+// arbitrary Filecoin.* JSON-RPC requests. Returns the raw JSON of the
+// response's `result` field for the caller to decode. We add this rather
+// than exporting a hundred typed wrappers — packages like networktruth need
+// access to ChainHead / StateReadState / etc. without us having to grow the
+// scanner API surface for every new chain query.
+func (r *LotusRPC) RawCall(ctx context.Context, method string, params []interface{}) ([]byte, error) {
+	var out json.RawMessage
+	if err := r.call(ctx, method, params, &out); err != nil {
+		return nil, err
+	}
+	return []byte(out), nil
+}
+
 func (r *LotusRPC) call(ctx context.Context, method string, params []interface{}, out interface{}) error {
 	body, _ := json.Marshal(rpcRequest{
 		Jsonrpc: "2.0",

@@ -34,6 +34,7 @@ import (
 	"github.com/Reiers/sp-radar/internal/cluster"
 	"github.com/Reiers/sp-radar/internal/foc"
 	"github.com/Reiers/sp-radar/internal/geoip"
+	"github.com/Reiers/sp-radar/internal/networktruth"
 	"github.com/Reiers/sp-radar/internal/probe"
 	"github.com/Reiers/sp-radar/internal/render"
 	"github.com/Reiers/sp-radar/internal/scanner"
@@ -120,6 +121,42 @@ func runCensus(c *cli.Context) error {
 		},
 	}
 
+	// --- Network truth (cheapest, run first; 3 RPC calls, ~2 seconds) ---
+	{
+		t0 := time.Now()
+		res, err := networktruth.Fetch(ctx, rpc)
+		if err != nil {
+			snap.Run.Errors = append(snap.Run.Errors, fmt.Sprintf("network-truth: %v", err))
+			fmt.Fprintf(os.Stderr, "[network-truth] partial: %v (continuing)\n", err)
+		}
+		if res != nil {
+			snap.NetworkTruth = &snapshot.NetworkTruth{
+				HeadEpoch:              res.HeadEpoch,
+				TotalRawBytePower:      bigStr(res.TotalRawBytePower),
+				TotalQualityAdjPower:   bigStr(res.TotalQualityAdjPower),
+				TotalPledgeCollateral:  bigStr(res.TotalPledgeCollateral),
+				MinerCount:             res.MinerCount,
+				MinerAboveMinPower:     res.MinerAboveMinPowerCount,
+				StorageMarketBalance:   bigStr(res.StorageMarketBalance),
+				StorageMarketLocked:    bigStr(res.StorageMarketLocked),
+				StorageMarketLastCron:  res.StorageMarketLastCron,
+				NextDealID:             res.NextDealID,
+				NextAllocationID:       res.NextAllocationID,
+				VerifiedRootKey:        res.VerifiedRootKey,
+				RawPiB:                 res.RawPiB(),
+				QAPiB:                  res.QAPiB(),
+				VerifiedRawPiBEstimate: res.VerifiedRawPiBEstimate(),
+				PledgeFIL:              res.PledgeFIL(),
+				MarketBalanceFIL:       res.MarketBalanceFIL(),
+				MarketLockedFIL:        res.MarketLockedFIL(),
+			}
+			snap.ChainHead.Height = res.HeadEpoch
+			fmt.Fprintf(os.Stderr, "[network-truth] head=%d raw=%.0f PiB QA=%.0f PiB miners=%d pledge=%.0f FIL deals=%d\n",
+				res.HeadEpoch, res.RawPiB(), res.QAPiB(), res.MinerAboveMinPowerCount, res.PledgeFIL(), res.NextDealID)
+		}
+		snap.Run.PhaseTimes["network-truth"] = time.Since(t0)
+	}
+
 	// --- FoC phase (cheapest, run first so we have data even if SPs scan fails) ---
 	if !c.Bool("skip-foc") {
 		t0 := time.Now()
@@ -199,6 +236,18 @@ func runCensus(c *cli.Context) error {
 		fmt.Printf("Rendered dashboard to %s/index.html\n", renderDir)
 	}
 	return nil
+}
+
+// bigStr returns the decimal string of a big.Int, or "" for nil.
+func bigStr(x interface{}) string {
+	if x == nil {
+		return ""
+	}
+	type stringer interface{ String() string }
+	if s, ok := x.(stringer); ok {
+		return s.String()
+	}
+	return fmt.Sprintf("%v", x)
 }
 
 // runChainCrawlPhase walks NetPeers + NetAgentVersion to enumerate the

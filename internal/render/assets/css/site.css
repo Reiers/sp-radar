@@ -137,6 +137,55 @@ main {
 }
 .hero-sub strong { color: var(--text); font-weight: 600; }
 
+/* --- network truth panel --- */
+.network-truth {
+  margin: 2.5rem 0 0;
+  padding: 1.75rem 1.5rem;
+  background: linear-gradient(135deg, rgba(92,184,255,0.08), rgba(139,92,255,0.04));
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+}
+.network-truth .section-title {
+  margin: 0 0 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.truth-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25rem 2rem;
+}
+.truth-cell .truth-num {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-feature-settings: "tnum";
+  line-height: 1.1;
+  color: var(--text);
+}
+.truth-cell .truth-unit {
+  font-size: 0.7em;
+  color: var(--text-2);
+  margin-left: 0.2em;
+  font-weight: 600;
+}
+.truth-cell .truth-of { color: var(--muted); }
+.truth-cell .truth-label {
+  font-size: 0.85rem;
+  color: var(--text-2);
+  font-weight: 500;
+  margin-top: 0.25rem;
+}
+.truth-cell .truth-label em { color: var(--muted); font-style: normal; font-size: 0.85em; }
+.truth-cell .truth-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+}
+
 /* --- KPIs --- */
 .kpis {
   display: grid;
