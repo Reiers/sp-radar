@@ -76,6 +76,50 @@ func softwareDistSorted(m map[string]int, total int) []SoftwareEntry {
 	return out
 }
 
+// PageData wraps a Snapshot with derived fields the template needs but that
+// don't make sense to persist (e.g. "how many operators do you need to
+// reach 50% of network power?" — cheap to compute, awkward to store).
+type PageData struct {
+	*snapshot.Snapshot
+	NarrativeFiftyPctOps  int
+	NarrativeNinetyPctOps int
+}
+
+// buildPageData computes the derived narrative fields.
+func buildPageData(s *snapshot.Snapshot) *PageData {
+	pd := &PageData{Snapshot: s}
+	pd.NarrativeFiftyPctOps = opsForPowerThreshold(s.Operators, 0.50)
+	pd.NarrativeNinetyPctOps = opsForPowerThreshold(s.Operators, 0.90)
+	return pd
+}
+
+// opsForPowerThreshold returns the smallest k such that the top-k operators
+// (assumed sorted by power desc) hold >= frac of the total network power.
+// Returns 0 if total is zero.
+func opsForPowerThreshold(ops []snapshot.Operator, frac float64) int {
+	total := new(big.Int)
+	for _, op := range ops {
+		if x, ok := new(big.Int).SetString(op.RawBytePower, 10); ok {
+			total.Add(total, x)
+		}
+	}
+	if total.Sign() == 0 {
+		return 0
+	}
+	thresholdF := new(big.Float).Mul(new(big.Float).SetInt(total), big.NewFloat(frac))
+	cum := new(big.Int)
+	for i, op := range ops {
+		if x, ok := new(big.Int).SetString(op.RawBytePower, 10); ok {
+			cum.Add(cum, x)
+		}
+		cumF := new(big.Float).SetInt(cum)
+		if cumF.Cmp(thresholdF) >= 0 {
+			return i + 1
+		}
+	}
+	return len(ops)
+}
+
 // Render produces the static dashboard at outDir from snap.
 func Render(snap *snapshot.Snapshot, outDir string) error {
 	if err := os.MkdirAll(outDir, 0755); err != nil {
@@ -109,7 +153,8 @@ func Render(snap *snapshot.Snapshot, outDir string) error {
 		return err
 	}
 	defer idx.Close()
-	if err := tpl.Execute(idx, snap); err != nil {
+	pd := buildPageData(snap)
+	if err := tpl.Execute(idx, pd); err != nil {
 		return fmt.Errorf("execute: %w", err)
 	}
 

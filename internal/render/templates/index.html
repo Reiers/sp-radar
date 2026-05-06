@@ -3,166 +3,251 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Filecoin Network Census — {{.Network}} {{.GeneratedAt.Format "2006-01-02"}}</title>
+<title>Filecoin Network Census · {{.Network}} · {{.GeneratedAt.Format "2006-01-02"}}</title>
+<meta name="description" content="A measured, public snapshot of who actually runs the Filecoin network. Operators, software versions, geography, FoC providers.">
 <link rel="stylesheet" href="assets/css/site.css">
+<link rel="icon" type="image/svg+xml" href="assets/logos/filecoin-mark.svg">
 </head>
 <body>
-<header>
-  <h1>Filecoin Network Census</h1>
-  <p class="meta">
-    {{.Network}} ·
-    snapshot {{.GeneratedAt.Format "2006-01-02 15:04 MST"}} ·
-    schema v{{.SchemaVersion}}
-  </p>
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand">
+      <span class="brand-mark">⌂</span>
+      <span class="brand-name">filcensus</span>
+    </div>
+    <nav class="header-nav">
+      <a href="#operators">Operators</a>
+      <a href="#sps">SPs</a>
+      <a href="#chain">Chain nodes</a>
+      <a href="#foc">FoC</a>
+      <a href="#methodology">Methodology</a>
+    </nav>
+    <div class="header-meta">
+      <span class="net-badge net-{{.Network}}">{{.Network}}</span>
+      <span class="snap-time" title="Snapshot generated">{{.GeneratedAt.Format "2006-01-02 15:04 MST"}}</span>
+    </div>
+  </div>
 </header>
 
 <main>
 
-<section id="overview">
-  <h2>Overview</h2>
-  <div class="cards">
-    <div class="card">
-      <div class="num">{{.Aggregates.OperatorsTotal}}</div>
-      <div class="lbl">Real operators</div>
-      <div class="sub">{{printf "%.1f" .Aggregates.DedupRatio}}× dedup · {{.Aggregates.OperatorsReachable}} reachable</div>
-    </div>
-    <div class="card">
-      <div class="num">{{.Aggregates.SPsReal}}</div>
-      <div class="lbl">Active miner IDs</div>
-      <div class="sub">+{{.Aggregates.SPsGhost}} ghost (zero power)</div>
-    </div>
-    <div class="card">
-      <div class="num">{{.Aggregates.ChainNodesTotal}}</div>
-      <div class="lbl">Chain nodes</div>
-      <div class="sub">via libp2p NetPeers</div>
-    </div>
-    <div class="card">
-      <div class="num">{{.Aggregates.FoCNodesTotal}}</div>
-      <div class="lbl">FoC providers</div>
-      <div class="sub">{{.Aggregates.FoCNodesActive}} active · {{.Aggregates.FoCNodesReachable}} reachable</div>
-    </div>
+<!-- ======================== HERO ======================== -->
+<section class="hero">
+  <p class="kicker">Filecoin Network Census</p>
+  <h1 class="hero-headline">
+    <span class="big-number">{{.Aggregates.OperatorsTotal}}</span>
+    operators run the active Filecoin storage layer.
+  </h1>
+  <p class="hero-sub">
+    {{if .Aggregates.OperatorsTotal}}
+    Deduplicated from <strong>{{.Aggregates.SPsReal}}</strong> active miner IDs by shared owner, worker, control, beneficiary, and IP.
+    Power concentration: <strong>{{.NarrativeFiftyPctOps}}</strong> operators control 50% of raw storage; <strong>{{.NarrativeNinetyPctOps}}</strong> control 90%.
+    {{else}}
+    No operator data in this snapshot — run filcensus census to populate.
+    {{end}}
+  </p>
+</section>
+
+<!-- ======================== KPIs ======================== -->
+<section class="kpis">
+  <div class="kpi">
+    <div class="kpi-num">{{.Aggregates.OperatorsTotal}}</div>
+    <div class="kpi-label">Real operators</div>
+    <div class="kpi-sub">{{printf "%.1f" .Aggregates.DedupRatio}}× dedup · {{.Aggregates.OperatorsReachable}} reachable</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-num">{{.Aggregates.SPsReal}}</div>
+    <div class="kpi-label">Active miner IDs</div>
+    <div class="kpi-sub">{{.Aggregates.SPsReachable}} libp2p-reachable</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-num">{{.Aggregates.ChainNodesTotal}}</div>
+    <div class="kpi-label">Chain nodes</div>
+    <div class="kpi-sub">via NetPeers</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-num">{{.Aggregates.FoCNodesTotal}}</div>
+    <div class="kpi-label">FoC providers</div>
+    <div class="kpi-sub">{{.Aggregates.FoCNodesActive}} active · {{.Aggregates.FoCNodesReachable}} reachable</div>
   </div>
 </section>
 
-<section id="operators">
-  <h2>Operator concentration</h2>
-  <p class="lead">{{len .Operators}} unique entities run the active fleet, after deduplicating miner IDs by shared owner / worker / control / beneficiary / IP.</p>
+<!-- ======================== OPERATORS ======================== -->
+<section id="operators" class="section">
+  <div class="section-header">
+    <h2>Operators by power</h2>
+    <p class="section-lead">Top 30 deduplicated operators ranked by raw byte power. Reachability column shows how many of the operator's miner IDs accept libp2p dials from us right now.</p>
+  </div>
   {{if .Operators}}
-  <table class="ops">
-    <thead><tr>
-      <th>#</th><th>Operator</th><th>Miner IDs</th><th>Power (PiB)</th><th>% net</th><th>Reachable</th><th>Top owners</th>
-    </tr></thead>
-    <tbody>
-    {{range $i, $op := topOperators .Operators 30}}
-      <tr>
-        <td class="n">{{add $i 1}}</td>
-        <td class="name">{{$op.Representative}}</td>
-        <td class="n">{{len $op.Members}}</td>
-        <td class="n">{{powerPiB $op.RawBytePower}}</td>
-        <td class="n">{{powerPctOfNetwork $op.RawBytePower $.Operators}}</td>
-        <td class="n">{{$op.ReachableMembers}}/{{len $op.Members}}</td>
-        <td class="loc">{{topNStrings $op.Owners 2}}</td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
+  <div class="table-scroll">
+    <table class="data-table ops-table">
+      <thead>
+        <tr>
+          <th class="rank">#</th>
+          <th>Operator</th>
+          <th class="num">Miner IDs</th>
+          <th class="num">Power (PiB)</th>
+          <th class="num">% net</th>
+          <th class="num">Reachable</th>
+          <th>Top owners</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $i, $op := topOperators .Operators 30}}
+        <tr>
+          <td class="rank">{{add $i 1}}</td>
+          <td class="mono">{{$op.Representative}}</td>
+          <td class="num">{{len $op.Members}}</td>
+          <td class="num">{{powerPiB $op.RawBytePower}}</td>
+          <td class="num">{{powerPctOfNetwork $op.RawBytePower $.Operators}}</td>
+          <td class="num reach">{{$op.ReachableMembers}}<span class="dim">/{{len $op.Members}}</span></td>
+          <td class="mono dim">{{topNStrings $op.Owners 2}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
   {{else}}<p class="empty">No operator clustering data in this snapshot.</p>{{end}}
 </section>
 
-<section id="sps-software">
-  <h2>SPs by software</h2>
+<!-- ======================== SPs by software ======================== -->
+<section id="sps" class="section">
+  <div class="section-header">
+    <h2>Storage providers by software</h2>
+    <p class="section-lead">Counts of miner IDs by detected daemon. <strong>private</strong> = peer ID published on chain but not dialable; <strong>no-peer-id</strong> = chain has no libp2p ID for this miner; <strong>other</strong> = dialed and got an unrecognised agent string.</p>
+  </div>
   {{if .Aggregates.SPsBySoftware}}
-  <table class="dist">
-    <thead><tr><th></th><th>Software</th><th>Count</th><th>%</th></tr></thead>
-    <tbody>
-    {{range $entry := softwareDistSorted .Aggregates.SPsBySoftware .Aggregates.SPsTotal}}
-      <tr>
-        <td><img class="logo" src="assets/logos/{{$entry.Logo}}" alt="{{$entry.Name}} logo" width="24" height="24"></td>
-        <td>{{$entry.Name}}</td>
-        <td class="n">{{$entry.Count}}</td>
-        <td class="n">{{printf "%.1f" $entry.Percent}}%</td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
+  <div class="dist-grid">
+  {{range $entry := softwareDistSorted .Aggregates.SPsBySoftware .Aggregates.SPsTotal}}
+    <div class="dist-row sw-{{$entry.Name}}">
+      <img class="dist-logo" src="assets/logos/{{$entry.Logo}}" alt="" width="32" height="32" loading="lazy">
+      <div class="dist-name">{{$entry.Name}}</div>
+      <div class="dist-bar"><span style="width: {{printf "%.1f" $entry.Percent}}%"></span></div>
+      <div class="dist-count">{{$entry.Count}}</div>
+      <div class="dist-pct">{{printf "%.1f" $entry.Percent}}%</div>
+    </div>
+  {{end}}
+  </div>
   {{else}}<p class="empty">No SP scan data in this snapshot.</p>{{end}}
 </section>
 
-<section id="chain-nodes">
-  <h2>Chain nodes by software</h2>
+<!-- ======================== Chain nodes ======================== -->
+<section id="chain" class="section">
+  <div class="section-header">
+    <h2>Chain nodes by software</h2>
+    <p class="section-lead">Public-facing Lotus, Forest, and Venus full nodes our daemon is currently connected to via libp2p.</p>
+  </div>
   {{if .Aggregates.ChainNodesBySW}}
-  <table class="dist">
-    <thead><tr><th></th><th>Software</th><th>Count</th><th>%</th></tr></thead>
-    <tbody>
-    {{range $entry := softwareDistSorted .Aggregates.ChainNodesBySW .Aggregates.ChainNodesTotal}}
-      <tr>
-        <td><img class="logo" src="assets/logos/{{$entry.Logo}}" alt="{{$entry.Name}} logo" width="24" height="24"></td>
-        <td>{{$entry.Name}}</td>
-        <td class="n">{{$entry.Count}}</td>
-        <td class="n">{{printf "%.1f" $entry.Percent}}%</td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
+  <div class="dist-grid">
+  {{range $entry := softwareDistSorted .Aggregates.ChainNodesBySW .Aggregates.ChainNodesTotal}}
+    <div class="dist-row sw-{{$entry.Name}}">
+      <img class="dist-logo" src="assets/logos/{{$entry.Logo}}" alt="" width="32" height="32" loading="lazy">
+      <div class="dist-name">{{$entry.Name}}</div>
+      <div class="dist-bar"><span style="width: {{printf "%.1f" $entry.Percent}}%"></span></div>
+      <div class="dist-count">{{$entry.Count}}</div>
+      <div class="dist-pct">{{printf "%.1f" $entry.Percent}}%</div>
+    </div>
+  {{end}}
+  </div>
   {{else}}<p class="empty">No chain-node crawl data in this snapshot.</p>{{end}}
 </section>
 
-<section id="foc">
-  <h2>FoC providers</h2>
-  <p class="lead">From the on-chain ServiceProviderRegistry. {{len .FoCNodes}} listed.</p>
-  <table class="foc">
-    <thead><tr>
-      <th>#</th><th>Name</th><th>Service URL</th><th>Declared</th>
-      <th>Resolved</th><th>HTTP</th><th>Server</th>
-    </tr></thead>
-    <tbody>
-    {{range $i, $n := .FoCNodes}}
-      <tr class="{{if $n.HTTPReachable}}reachable{{else}}unreachable{{end}}">
-        <td class="n">{{$n.ProviderID}}</td>
-        <td class="name">{{$n.Name}}</td>
-        <td class="url"><a href="{{$n.ServiceURL}}" rel="nofollow noopener">{{$n.ServiceURL}}</a></td>
-        <td class="loc">{{$n.DeclaredLocation}}</td>
-        <td class="loc">
-          {{range $g := $n.GeoIP}}
-            {{$g.CountryCode}}{{if $g.City}} ({{$g.City}}){{end}}{{if $g.ASN}} · AS{{$g.ASN}}{{end}}
-          {{else}}—{{end}}
-        </td>
-        <td class="status">
-          {{if $n.HTTPReachable}}
-            <span class="ok">{{$n.HTTPStatusCode}}</span>
-          {{else}}
-            <span class="err" title="{{$n.HTTPError}}">×</span>
-          {{end}}
-        </td>
-        <td class="server">{{$n.HTTPServerHeader}}</td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
+<!-- ======================== FoC ======================== -->
+<section id="foc" class="section">
+  <div class="section-header">
+    <h2>FoC providers</h2>
+    <p class="section-lead">Every PDP service registered on the on-chain ServiceProviderRegistry contract ({{len .FoCNodes}} listed). Status column is a live HTTP probe of <code>&lt;serviceURL&gt;/pdp/ping</code>.</p>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table foc-table">
+      <thead>
+        <tr>
+          <th class="rank">#</th>
+          <th>Name</th>
+          <th>Service URL</th>
+          <th>Declared</th>
+          <th>Resolved</th>
+          <th class="num">HTTP</th>
+          <th>Server</th>
+        </tr>
+      </thead>
+      <tbody>
+      {{range $n := .FoCNodes}}
+        <tr class="{{if $n.HTTPReachable}}reachable{{else}}unreachable{{end}}">
+          <td class="rank">{{$n.ProviderID}}</td>
+          <td class="foc-name">{{$n.Name}}</td>
+          <td class="mono ellipsis"><a href="{{$n.ServiceURL}}" rel="nofollow noopener">{{$n.ServiceURL}}</a></td>
+          <td class="dim">{{$n.DeclaredLocation}}</td>
+          <td class="dim">
+            {{range $g := $n.GeoIP}}
+              {{$g.CountryCode}}{{if $g.City}} ({{$g.City}}){{end}}{{if $g.ASN}} · AS{{$g.ASN}}{{end}}
+            {{else}}—{{end}}
+          </td>
+          <td class="num status">
+            {{if $n.HTTPReachable}}
+              <span class="ok">{{$n.HTTPStatusCode}}</span>
+            {{else}}
+              <span class="err" title="{{$n.HTTPError}}">×</span>
+            {{end}}
+          </td>
+          <td class="mono dim ellipsis">{{$n.HTTPServerHeader}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
 </section>
 
-<section id="run">
-  <h2>Run details</h2>
+<!-- ======================== Methodology ======================== -->
+<section id="methodology" class="section">
+  <div class="section-header">
+    <h2>Methodology</h2>
+  </div>
+  <div class="prose">
+    <h3>What we measure</h3>
+    <ul>
+      <li><strong>Storage providers:</strong> Active set from Filfox <code>/miner/list/power</code> (miners with consensus-eligible power). Each is probed once via libp2p identify; software is classified from the agent string and the supported protocol set.</li>
+      <li><strong>Chain nodes:</strong> Our own daemon's <code>NetPeers</code> + <code>NetAgentVersion</code>. This is the public-facing fleet of full nodes — private operator nodes that don't accept inbound connections won't appear.</li>
+      <li><strong>FoC providers:</strong> Read directly from the on-chain <code>ServiceProviderRegistry</code> contract (mainnet <code>0xf55dDbf63F1b55c3F1D4FA7e339a68AB7b64A5eB</code>). Each <code>serviceURL</code> is HTTP-probed at <code>/pdp/ping</code>.</li>
+      <li><strong>Operator clustering:</strong> Union-find over shared owner / worker / control / beneficiary addresses, plus shared IPs (with a CDN cap of 50 to avoid false unions through Cloudflare-like proxies). Zero-power miner IDs are excluded; they don't represent real entities.</li>
+    </ul>
+    <h3>What we don't measure</h3>
+    <ul>
+      <li>Private operator chain nodes (no public dial address).</li>
+      <li>SPs without a published peer ID (currently labelled <em>no-peer-id</em>).</li>
+      <li>Actual data stored / retrieval performance / deal volumes — those are different signals and live in DataCap / Spark / Filfox.</li>
+    </ul>
+    <h3>Reproducibility</h3>
+    <p>Every snapshot is published as a signed JSON file under <a href="data/">/data/</a>. Source: <a href="https://github.com/Reiers/sp-radar" rel="noopener">github.com/Reiers/sp-radar</a>. Run <code>filcensus census --network mainnet</code> against your own Lotus node to reproduce.</p>
+    <h3>Privacy &amp; opt-out</h3>
+    <p>We read what nodes broadcast publicly via libp2p identify, chain-published multiaddrs, and on-chain registry entries. No exploitation, no auth bypass, no private endpoints. Operators who want to be invisible should not advertise public dial addresses on chain. Email <a href="mailto:filcensus@reiers.io">filcensus@reiers.io</a> to be excluded from the published version (still counted in aggregates).</p>
+  </div>
+</section>
+
+<!-- ======================== Run details (compact) ======================== -->
+<section id="run" class="section run-details">
+  <div class="section-header">
+    <h2>Snapshot run</h2>
+  </div>
   <dl class="run">
     <dt>Started</dt><dd>{{.Run.StartedAt.Format "2006-01-02 15:04:05 MST"}}</dd>
     <dt>Finished</dt><dd>{{.Run.FinishedAt.Format "2006-01-02 15:04:05 MST"}}</dd>
     <dt>Duration</dt><dd>{{.Run.Duration}}</dd>
-    {{range $phase, $dur := .Run.PhaseTimes}}
-    <dt>{{$phase}}</dt><dd>{{$dur}}</dd>
-    {{end}}
-    <dt>Generator</dt><dd>{{.GeneratedBy}}</dd>
-    {{if .Run.Errors}}
-      <dt>Errors</dt>
-      <dd><ul>{{range $e := .Run.Errors}}<li>{{$e}}</li>{{end}}</ul></dd>
-    {{end}}
+    {{range $phase, $dur := .Run.PhaseTimes}}<dt>{{$phase}}</dt><dd>{{$dur}}</dd>{{end}}
+    <dt>Generator</dt><dd class="mono dim">{{.GeneratedBy}}</dd>
+    {{if .Run.Errors}}<dt>Errors</dt><dd><ul>{{range $e := .Run.Errors}}<li class="mono dim">{{$e}}</li>{{end}}</ul></dd>{{end}}
   </dl>
 </section>
 
 </main>
 
-<footer>
-  <p>Filecoin Network Census · operator-published data via libp2p identify and on-chain ServiceProviderRegistry.</p>
-  <p class="muted">Logos used under fair-use citation; trademarks belong to their respective projects.</p>
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>filcensus · operator-published data via libp2p identify and on-chain ServiceProviderRegistry · refreshed every ~48h.</p>
+    <p class="muted">Logos used under fair-use citation; trademarks belong to their respective projects. Source available on <a href="https://github.com/Reiers/sp-radar" rel="noopener">GitHub</a>.</p>
+  </div>
 </footer>
+
 </body>
 </html>
