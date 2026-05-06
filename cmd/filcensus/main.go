@@ -67,6 +67,7 @@ var censusCmd = &cli.Command{
 		&cli.StringFlag{Name: "network", Usage: "mainnet | calibration", Value: "mainnet"},
 		&cli.StringFlag{Name: "out", Usage: "Output directory for snapshot JSON", Value: "snapshots"},
 		&cli.IntFlag{Name: "max-sps", Usage: "Limit SP scan to N (0 = all)", Value: 0},
+		&cli.StringFlag{Name: "sp-source", Usage: "Active-SP source: 'filfox' (fast, ~700 active miners) or 'chain-full' (slow, all 750k registered)", Value: "filfox"},
 		&cli.IntFlag{Name: "concurrency", Usage: "libp2p concurrency", Value: 50},
 		&cli.IntFlag{Name: "lotus-concurrency", Usage: "Lotus RPC concurrency", Value: 50},
 		&cli.DurationFlag{Name: "timeout", Usage: "Per-peer libp2p timeout", Value: 10 * time.Second},
@@ -210,6 +211,7 @@ func runSPPhase(ctx context.Context, c *cli.Context, snap *snapshot.Snapshot) er
 	var lastPhase string
 	records, err := spscan.Run(ctx, spscan.Options{
 		APIInfo:          c.String("api"),
+		Source:           spscan.Source(c.String("sp-source")),
 		Concurrency:      c.Int("concurrency"),
 		LotusConcurrency: c.Int("lotus-concurrency"),
 		MaxProviders:     c.Int("max-sps"),

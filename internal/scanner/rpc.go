@@ -21,13 +21,56 @@ type LotusRPC struct {
 
 func NewLotusRPC(apiInfo string) *LotusRPC {
 	ai := ParseAPIInfo(apiInfo)
-	url := ai.Addr
+	url := normalizeRPCURL(ai.Addr)
+	return &LotusRPC{url: url, token: ai.Token}
+}
+
+// normalizeRPCURL accepts either an http(s)/ws(s) URL or a Lotus multiaddr
+// like `/ip4/127.0.0.1/tcp/1234/http` and returns an http(s) URL with /rpc/v1.
+func normalizeRPCURL(addr string) string {
+	url := addr
+	// multiaddr form: /ip4/HOST/tcp/PORT/(http|https|ws|wss) [/optional/path]
+	if strings.HasPrefix(url, "/") {
+		parts := strings.Split(strings.TrimLeft(url, "/"), "/")
+		var host, port, scheme string
+		for i := 0; i+1 < len(parts); i += 2 {
+			switch parts[i] {
+			case "ip4", "ip6", "dns", "dns4", "dns6", "dnsaddr":
+				host = parts[i+1]
+			case "tcp":
+				port = parts[i+1]
+			}
+		}
+		switch {
+		case contains(parts, "https"):
+			scheme = "https"
+		case contains(parts, "wss"):
+			scheme = "https"
+		case contains(parts, "ws"):
+			scheme = "http"
+		default:
+			scheme = "http"
+		}
+		if strings.Contains(host, ":") { // ipv6
+			host = "[" + host + "]"
+		}
+		url = scheme + "://" + host + ":" + port
+	}
 	url = strings.Replace(url, "wss://", "https://", 1)
 	url = strings.Replace(url, "ws://", "http://", 1)
 	if !strings.Contains(url, "/rpc/") {
 		url = strings.TrimRight(url, "/") + "/rpc/v1"
 	}
-	return &LotusRPC{url: url, token: ai.Token}
+	return url
+}
+
+func contains(ss []string, x string) bool {
+	for _, s := range ss {
+		if s == x {
+			return true
+		}
+	}
+	return false
 }
 
 type rpcRequest struct {

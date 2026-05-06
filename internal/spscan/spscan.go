@@ -32,11 +32,27 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
+// Source picks where the active-SP set comes from.
+type Source string
+
+const (
+	// SourceFilfox uses https://filfox.info/api/v1/miner/list/power to fetch
+	// the ~700 currently-active miners with power attached. Fast (~5s, paginated).
+	// Default. Recommended for normal snapshots.
+	SourceFilfox Source = "filfox"
+
+	// SourceChainFull walks StateListMiners + StateMinerPower across all 750k
+	// registered miners. Slow (20-30 min on a local Lotus). Use only when you
+	// explicitly want a chain-truth snapshot or Filfox is down.
+	SourceChainFull Source = "chain-full"
+)
+
 // Options controls a single SPScan run.
 type Options struct {
 	APIInfo          string
+	Source           Source        // "filfox" (default) or "chain-full"
 	Concurrency      int           // libp2p dial parallelism
-	LotusConcurrency int           // RPC parallelism for the power-filter phase
+	LotusConcurrency int           // RPC parallelism for the chain-full path
 	MaxProviders     int           // 0 = no limit; otherwise cap qualified set
 	Timeout          time.Duration // per-peer libp2p timeout
 	Verbose          bool
@@ -67,15 +83,27 @@ func Run(ctx context.Context, opts Options) ([]snapshot.SPRecord, error) {
 	}
 	defer h.Close()
 
-	// Phase 1: list miners
-	miners, err := rpc.StateListMiners(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("StateListMiners: %w", err)
+	if opts.Source == "" {
+		opts.Source = SourceFilfox
 	}
-	progress(opts.OnProgress, "list", int64(len(miners)), int64(len(miners)))
 
-	// Phase 2: filter by min power
-	qualified := filterByPower(ctx, rpc, miners, opts.LotusConcurrency, opts.OnProgress)
+	var qualified []qualifiedSP
+	switch opts.Source {
+	case SourceFilfox:
+		qualified, err = fetchFilfoxActiveMiners(ctx, opts.OnProgress)
+		if err != nil {
+			return nil, fmt.Errorf("filfox: %w", err)
+		}
+	case SourceChainFull:
+		miners, err := rpc.StateListMiners(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("StateListMiners: %w", err)
+		}
+		progress(opts.OnProgress, "list", int64(len(miners)), int64(len(miners)))
+		qualified = filterByPower(ctx, rpc, miners, opts.LotusConcurrency, opts.OnProgress, opts.MaxProviders)
+	default:
+		return nil, fmt.Errorf("unknown spscan source %q", opts.Source)
+	}
 
 	if opts.MaxProviders > 0 && len(qualified) > opts.MaxProviders {
 		qualified = qualified[:opts.MaxProviders]
@@ -133,17 +161,20 @@ type qualifiedSP struct {
 	qualPower *big.Int
 }
 
-func filterByPower(ctx context.Context, rpc *scanner.LotusRPC, miners []string, conc int, onProgress func(string, int64, int64)) []qualifiedSP {
+func filterByPower(ctx context.Context, rpc *scanner.LotusRPC, miners []string, conc int, onProgress func(string, int64, int64), maxQualified int) []qualifiedSP {
 	var mu sync.Mutex
 	var out []qualifiedSP
 	var done atomic.Int64
 	total := int64(len(miners))
 
+	localCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	sem := make(chan struct{}, conc)
 	var wg sync.WaitGroup
 
 	for _, m := range miners {
-		if ctx.Err() != nil {
+		if localCtx.Err() != nil {
 			break
 		}
 		wg.Add(1)
@@ -155,7 +186,7 @@ func filterByPower(ctx context.Context, rpc *scanner.LotusRPC, miners []string, 
 			if n%5000 == 0 || n == total {
 				progress(onProgress, "power-filter", n, total)
 			}
-			p, err := rpc.StateMinerPower(ctx, addr)
+			p, err := rpc.StateMinerPower(localCtx, addr)
 			if err != nil || !p.HasMinPower {
 				return
 			}
@@ -169,7 +200,13 @@ func filterByPower(ctx context.Context, rpc *scanner.LotusRPC, miners []string, 
 			}
 			mu.Lock()
 			out = append(out, qualifiedSP{addr: addr, rawPower: raw, qualPower: qual})
+			curLen := len(out)
 			mu.Unlock()
+			// Short-circuit early when we've already got enough qualified SPs.
+			// We cancel the local context so in-flight workers stop quickly.
+			if maxQualified > 0 && curLen >= maxQualified {
+				cancel()
+			}
 		}(m)
 	}
 	wg.Wait()
