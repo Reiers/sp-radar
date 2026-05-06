@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Filecoin Network Census · {{.Network}} · {{.GeneratedAt.Format "2006-01-02"}}</title>
-<meta name="description" content="A measured, public snapshot of who actually runs the Filecoin network. Operators, software versions, geography, FoC providers.">
+<title>Filecoin Network Intelligence · {{.Network}} · {{.GeneratedAt.Format "2006-01-02"}}</title>
+<meta name="description" content="The real state of the Filecoin network, not the dashboard version. Live operator concentration, geography, software, and FoC.">
 <link rel="stylesheet" href="assets/css/site.css">
 <link rel="icon" type="image/svg+xml" href="assets/logos/filcensus-mark.svg">
 </head>
@@ -12,20 +12,22 @@
 
 <header class="site-header">
   <div class="header-inner">
-    <div class="brand">
+    <a href="#" class="brand">
       <img class="brand-mark-img" src="assets/logos/filcensus-mark.svg" alt="" width="28" height="28">
       <span class="brand-name">filcensus</span>
-    </div>
+    </a>
     <nav class="header-nav">
+      <a href="#concentration">Concentration</a>
+      <a href="#geography">Geography</a>
       <a href="#operators">Operators</a>
-      <a href="#sps">SPs</a>
+      <a href="#software">Software</a>
       <a href="#chain">Chain nodes</a>
       <a href="#foc">FoC</a>
       <a href="#methodology">Methodology</a>
     </nav>
     <div class="header-meta">
       <span class="net-badge net-{{.Network}}">{{.Network}}</span>
-      <span class="snap-time" title="Snapshot generated">{{.GeneratedAt.Format "2006-01-02 15:04 MST"}}</span>
+      <span class="snap-time">snapshot {{.GeneratedAt.Format "2006-01-02 15:04 MST"}}</span>
     </div>
   </div>
 </header>
@@ -34,143 +36,179 @@
 
 <!-- ======================== HERO ======================== -->
 <section class="hero">
-  <p class="kicker">Filecoin Network Census</p>
+  <p class="kicker">filecoin network intelligence</p>
   <h1 class="hero-headline">
-    <span class="big-number">{{.Aggregates.OperatorsTotal}}</span>
-    operators run the active Filecoin storage layer.
+    The real state of the network, <span class="hl-pink">not the dashboard version.</span>
   </h1>
   <p class="hero-sub">
-    {{if .Aggregates.OperatorsTotal}}
-    Deduplicated from <strong>{{.Aggregates.SPsReal}}</strong> active miner IDs by shared owner, worker, control, beneficiary, and IP.
-    Power concentration: <strong>{{.NarrativeFiftyPctOps}}</strong> operators control 50% of raw storage; <strong>{{.NarrativeNinetyPctOps}}</strong> control 90%.
-    {{else}}
-    No operator data in this snapshot — run filcensus census to populate.
-    {{end}}
+    {{.Network}} chain epoch <strong>{{.NetworkTruth.HeadEpoch}}</strong>. {{.Aggregates.SPsReal}} reported miner IDs collapse into <strong>{{.Aggregates.OperatorsTotal}}</strong> deduplicated operators. <strong>{{.NarrativeFiftyPctOps}}</strong> control half of the raw storage; <strong>{{.NarrativeNinetyPctOps}}</strong> control 90%. The QA / raw ratio is <strong>{{printf "%.1f" .QARawRatio}}×</strong> — most of the network is verified-deal sectors, not committed capacity.
   </p>
 </section>
 
-<!-- ======================== NETWORK TRUTH ======================== -->
-{{if .NetworkTruth}}
-<section id="network-truth" class="network-truth">
-  <h2 class="section-title">Network truth · chain epoch {{.NetworkTruth.HeadEpoch}}</h2>
-  <div class="truth-grid">
-    <div class="truth-cell">
-      {{$v := powerHumanPiB .NetworkTruth.RawPiB}}
-      <div class="truth-num">{{index $v 0}}<span class="truth-unit">{{index $v 1}}</span></div>
-      <div class="truth-label">Raw byte power</div>
-      <div class="truth-sub">All sealed sectors, network-wide</div>
-    </div>
-    <div class="truth-cell">
-      {{$v := powerHumanPiB .NetworkTruth.QAPiB}}
-      <div class="truth-num">{{index $v 0}}<span class="truth-unit">{{index $v 1}}</span></div>
-      <div class="truth-label">Quality-adjusted</div>
-      <div class="truth-sub">Verified deals get 10× weight</div>
-    </div>
-    <div class="truth-cell">
-      {{$v := powerHumanPiB .NetworkTruth.VerifiedRawPiBEstimate}}
-      <div class="truth-num">{{index $v 0}}<span class="truth-unit">{{index $v 1}}</span></div>
-      <div class="truth-label">Verified-deal data <em>(est.)</em></div>
-      <div class="truth-sub">From (QA - raw) / 9</div>
-    </div>
-    {{if .ActiveDealsApprox}}
-    <div class="truth-cell">
-      <div class="truth-num">{{commaInt .ActiveDealsApprox}}</div>
-      <div class="truth-label">Active deals <em>(est.)</em></div>
-      <div class="truth-sub">Sliding window from f05.States; recent boundary sampled</div>
-    </div>
-    {{else}}
-    <div class="truth-cell">
-      <div class="truth-num">{{commaInt .NetworkTruth.NextDealID}}</div>
-      <div class="truth-label">Lifetime deals on chain</div>
-      <div class="truth-sub">High-watermark; older deals are GC'd</div>
-    </div>
+<!-- ======================== HEADLINE STRIP ======================== -->
+<section class="headline-strip">
+  <div class="hl">
+    <div class="hl-num red">{{.Aggregates.SPsTotal}}</div>
+    <div class="hl-lbl">Reported miner IDs</div>
+  </div>
+  <div class="hl">
+    <div class="hl-num orange">{{.Aggregates.OperatorsTotal}}</div>
+    <div class="hl-lbl">Real operators</div>
+  </div>
+  <div class="hl">
+    {{$v := powerHumanPiB .NetworkTruth.RawPiB}}
+    <div class="hl-num blue">{{index $v 0}}<span class="hl-unit">{{index $v 1}}</span></div>
+    <div class="hl-lbl">Raw storage</div>
+  </div>
+  <div class="hl">
+    {{$v := powerHumanPiB .NetworkTruth.QAPiB}}
+    <div class="hl-num dim">{{index $v 0}}<span class="hl-unit">{{index $v 1}}</span></div>
+    <div class="hl-lbl">QAP ({{printf "%.1f" .QARawRatio}}× inflated)</div>
+  </div>
+  <div class="hl">
+    <div class="hl-num purple">{{.NarrativeNinetyPctOps}}</div>
+    <div class="hl-lbl">Run 90% of power</div>
+  </div>
+  <div class="hl">
+    <div class="hl-num green">{{.NarrativeFiftyPctOps}}</div>
+    <div class="hl-lbl">Run 50% of power</div>
+  </div>
+  <div class="hl">
+    <div class="hl-num pink">{{commaInt .NetworkTruth.ActiveDealsApprox}}</div>
+    <div class="hl-lbl">Active deals (est.)</div>
+  </div>
+  <div class="hl">
+    <div class="hl-num warn">{{commaFloat .NetworkTruth.PledgeFIL 0}}<span class="hl-unit">FIL</span></div>
+    <div class="hl-lbl">Pledge collateral</div>
+  </div>
+</section>
+
+<!-- ======================== KEY FINDINGS CALLOUT ======================== -->
+<section class="callout">
+  <h3>Key findings</h3>
+  <p><strong>{{.NarrativeNinetyPctOps}} entities run 90% of Filecoin's storage. {{.NarrativeFiftyPctOps}} entities run half.</strong> The {{.Aggregates.SPsTotal}} reported miner IDs deduplicate into {{.Aggregates.OperatorsTotal}} unique operators by shared owner / worker / control / beneficiary addresses.</p>
+  <p>Real raw storage is <strong>{{printf "%.2f" (div .NetworkTruth.RawPiB 1024)}} EiB</strong>. The QAP metric ({{printf "%.1f" (div .NetworkTruth.QAPiB 1024)}} EiB) hides the picture behind a 10× verified-deal multiplier — today the QA / raw ratio is <strong>{{printf "%.1f" .QARawRatio}}×</strong>.</p>
+  <p><strong>{{printf "%.1f" .VerifiedSharePct}}% of remaining storage is verified-deal data</strong>. Only {{printf "%.0f" (sub .NetworkTruth.RawPiB .NetworkTruth.VerifiedRawPiBEstimate)}} PiB ({{printf "%.1f" .CCSharePct}}%) is committed capacity (CC).</p>
+  {{if .GeoTopCountries}}
+  <p><strong>Geographic concentration:</strong> {{.GeoNarrativeTop2}}. Filecoin's physical footprint is narrower than its miner-ID count suggests.</p>
+  {{end}}
+</section>
+
+<!-- ======================== CONCENTRATION ======================== -->
+<section id="concentration" class="section">
+  <div class="section-header">
+    <h2>Power concentration</h2>
+    <p class="section-lead">Cumulative share of network raw power as you walk down the operator list ranked by power. The faster the curve hits the top, the more concentrated the network.</p>
+  </div>
+
+  <!-- Concentration KPI band -->
+  <div class="concentration-band">
+    <div class="cb-cell"><div class="cb-num red">{{.NarrativeFiftyPctOps}}</div><div class="cb-lbl">For 50%</div></div>
+    <div class="cb-cell"><div class="cb-num orange">{{.NarrativeSeventyFivePctOps}}</div><div class="cb-lbl">For 75%</div></div>
+    <div class="cb-cell"><div class="cb-num purple">{{.NarrativeNinetyPctOps}}</div><div class="cb-lbl">For 90%</div></div>
+    <div class="cb-cell"><div class="cb-num blue">{{.NarrativeNinetyFivePctOps}}</div><div class="cb-lbl">For 95%</div></div>
+    <div class="cb-cell"><div class="cb-num dim">{{.NarrativeNinetyNinePctOps}}</div><div class="cb-lbl">For 99%</div></div>
+  </div>
+
+  <!-- Top tier stacked bar -->
+  <h3 class="subhead">Top tiers vs the rest</h3>
+  <div class="tier-bar">
+    {{range .OperatorTiers}}
+      <div class="tier-seg" style="width: {{printf "%.1f" .WidthPct}}%; background: {{.Gradient}}" title="{{.Label}}">
+        <span class="tier-label">{{.Label}}</span>
+      </div>
     {{end}}
-    <div class="truth-cell">
-      <div class="truth-num">{{commaInt .NetworkTruth.NextAllocationID}}</div>
-      <div class="truth-label">DataCap allocations</div>
-      <div class="truth-sub">Issued by FIL+ allocators</div>
+  </div>
+
+  <!-- Deal vs CC stacked bar -->
+  <h3 class="subhead">Verified deals vs committed capacity</h3>
+  <div class="tier-bar">
+    <div class="tier-seg" style="width: {{printf "%.1f" .VerifiedSharePct}}%; background: linear-gradient(90deg, #3FB950, #2EA043);" title="Verified deals">
+      <span class="tier-label">Deal: {{printf "%.0f" .NetworkTruth.VerifiedRawPiBEstimate}} PiB ({{printf "%.1f" .VerifiedSharePct}}%)</span>
     </div>
-    <div class="truth-cell">
-      <div class="truth-num">{{commaFloat .NetworkTruth.PledgeFIL 0}}<span class="truth-unit">FIL</span></div>
-      <div class="truth-label">Total SP pledge</div>
-      <div class="truth-sub">Locked in storage power actor (f04)</div>
+    <div class="tier-seg" style="width: {{printf "%.1f" .CCSharePct}}%; background: linear-gradient(90deg, #D29922, #DB6D28);" title="Committed capacity">
+      <span class="tier-label">CC: {{printf "%.0f" (sub .NetworkTruth.RawPiB .NetworkTruth.VerifiedRawPiBEstimate)}} PiB</span>
     </div>
-    <div class="truth-cell">
-      <div class="truth-num">{{commaFloat .NetworkTruth.MarketLockedFIL 0}}<span class="truth-unit">FIL</span></div>
-      <div class="truth-label">Provider deal collateral</div>
-      <div class="truth-sub">Locked in storage market actor (f05)</div>
-    </div>
-    <div class="truth-cell">
-      <div class="truth-num">{{commaInt .NetworkTruth.MinerAboveMinPower}}<span class="truth-unit"><span class="truth-of">/</span>{{commaInt .NetworkTruth.MinerCount}}</span></div>
-      <div class="truth-label">Active miners on chain</div>
-      <div class="truth-sub">{{commaInt .NetworkTruth.MinerCount}} ever registered</div>
+  </div>
+
+  <!-- Lorenz chart -->
+  <h3 class="subhead">Cumulative power curve</h3>
+  <figure class="chart">
+    <svg viewBox="0 0 1000 420" class="lorenz" role="img" aria-label="Cumulative power share by operator rank">
+      <defs>
+        <linearGradient id="lorenz-fill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stop-color="#A371F7" stop-opacity="0.42"/>
+          <stop offset="1" stop-color="#A371F7" stop-opacity="0.02"/>
+        </linearGradient>
+      </defs>
+      <g class="grid">
+        <line x1="0" y1="10"  x2="1000" y2="10"  />
+        <line x1="0" y1="110" x2="1000" y2="110" />
+        <line x1="0" y1="210" x2="1000" y2="210" />
+        <line x1="0" y1="310" x2="1000" y2="310" />
+        <line x1="0" y1="410" x2="1000" y2="410" />
+      </g>
+      <!-- Threshold lines (50%, 90%) on the 0…400 power axis, offset by +10 -->
+      <line class="threshold" x1="0" y1="210" x2="1000" y2="210"/>
+      <line class="threshold" x1="0" y1="50"  x2="1000" y2="50" />
+      <text x="8" y="204" class="threshold-label">50% network power</text>
+      <text x="8" y="44"  class="threshold-label">90% network power</text>
+      <!-- Curve: shifted +10 in y so the bottom (y=410) sits on the bottom grid line -->
+      <g transform="translate(0 10)">
+        <path class="lorenz-fill" d="{{lorenzPath .Operators}} L 1000 400 L 0 400 Z"/>
+        <path class="lorenz-line" d="{{lorenzPath .Operators}}"/>
+      </g>
+    </svg>
+    <figcaption class="chart-caption">
+      <span><span class="chart-dot" style="background: #A371F7"></span>Cumulative power share · {{len .Operators}} operators</span>
+      <span class="dim">{{.NarrativeFiftyPctOps}} ops reach 50% · {{.NarrativeNinetyPctOps}} ops reach 90%</span>
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ======================== GEOGRAPHY ======================== -->
+{{if .GeoTopCountries}}
+<section id="geography" class="section">
+  <div class="section-header">
+    <h2>Geographic distribution</h2>
+    <p class="section-lead">Where the {{.Aggregates.SPsReachable}} reachable miner IDs actually live, by GeoIP of their published multiaddrs.</p>
+  </div>
+  <div class="geo-split">
+    <figure class="chart">
+      <svg viewBox="-110 -110 220 220" class="donut" role="img" aria-label="SP geographic distribution">
+        <defs>
+          {{range .GeoTopCountries}}<linearGradient id="g-{{.CC}}" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="{{.Color}}"/><stop offset="1" stop-color="{{.ColorDark}}"/></linearGradient>{{end}}
+        </defs>
+        {{range $i, $c := .GeoTopCountries}}
+          <path d="{{$c.ArcPath}}" fill="url(#g-{{$c.CC}})" stroke="var(--bg)" stroke-width="1.5"/>
+        {{end}}
+        <text x="0" y="-6" text-anchor="middle" class="donut-num">{{.GeoTotalIPs}}</text>
+        <text x="0" y="14" text-anchor="middle" class="donut-lbl">geolocated IPs</text>
+      </svg>
+    </figure>
+    <div class="geo-table">
+      <table class="data-table">
+        <thead><tr><th>Country</th><th class="num">IPs</th><th class="num">Share</th></tr></thead>
+        <tbody>
+          {{range .GeoTopCountries}}
+          <tr>
+            <td><span class="country-pill" style="--cc-color: {{.Color}}"><span class="country-dot"></span>{{.CC}}</span> {{.Name}}</td>
+            <td class="num">{{.Count}}</td>
+            <td class="num">{{printf "%.0f" .Pct}}%</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
 {{end}}
 
-<!-- ======================== KPIs ======================== -->
-<section class="kpis">
-  <div class="kpi">
-    <div class="kpi-num">{{.Aggregates.OperatorsTotal}}</div>
-    <div class="kpi-label">Real operators</div>
-    <div class="kpi-sub">{{printf "%.1f" .Aggregates.DedupRatio}}× dedup · {{.Aggregates.OperatorsReachable}} reachable</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-num">{{.Aggregates.SPsReal}}</div>
-    <div class="kpi-label">Active miner IDs</div>
-    <div class="kpi-sub">{{.Aggregates.SPsReachable}} libp2p-reachable</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-num">{{.Aggregates.ChainNodesTotal}}</div>
-    <div class="kpi-label">Chain nodes</div>
-    <div class="kpi-sub">via NetPeers</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-num">{{.Aggregates.FoCNodesTotal}}</div>
-    <div class="kpi-label">FoC providers</div>
-    <div class="kpi-sub">{{.Aggregates.FoCNodesActive}} active · {{.Aggregates.FoCNodesReachable}} reachable</div>
-  </div>
-</section>
-
-<!-- ======================== POWER CONCENTRATION (Lorenz) ======================== -->
-<section id="concentration" class="section">
-  <div class="section-header">
-    <h2>Power concentration</h2>
-    <p class="section-lead">Cumulative share of network raw power as you walk down the operator list ranked by power. The faster the curve hits the top of the chart, the more concentrated the network.</p>
-  </div>
-  {{if .Operators}}
-  <figure class="chart">
-    <svg viewBox="0 0 1000 400" preserveAspectRatio="none" class="lorenz" role="img" aria-label="Cumulative power share by operator rank">
-      <!-- background grid -->
-      <g class="grid">
-        <line x1="0" y1="0"   x2="1000" y2="0"   />
-        <line x1="0" y1="100" x2="1000" y2="100" />
-        <line x1="0" y1="200" x2="1000" y2="200" />
-        <line x1="0" y1="300" x2="1000" y2="300" />
-        <line x1="0" y1="400" x2="1000" y2="400" />
-      </g>
-      <!-- 50% line -->
-      <line class="threshold" x1="0" y1="200" x2="1000" y2="200" stroke-dasharray="4 4"/>
-      <!-- 90% line -->
-      <line class="threshold" x1="0" y1="40"  x2="1000" y2="40"  stroke-dasharray="4 4"/>
-      <!-- the curve -->
-      <path class="lorenz-fill" d="{{lorenzPath .Operators}} L 1000 400 Z"/>
-      <path class="lorenz-line" d="{{lorenzPath .Operators}}"/>
-    </svg>
-    <figcaption class="chart-caption">
-      <span><span class="chart-dot" style="background:var(--accent)"></span>Cumulative power share</span>
-      <span class="dim">{{.NarrativeFiftyPctOps}} ops → 50% · {{.NarrativeNinetyPctOps}} ops → 90% · {{len .Operators}} ops total</span>
-    </figcaption>
-  </figure>
-  {{end}}
-</section>
-
 <!-- ======================== OPERATORS ======================== -->
 <section id="operators" class="section">
   <div class="section-header">
-    <h2>Operators by power</h2>
-    <p class="section-lead">Top 30 deduplicated operators ranked by raw byte power. Owner addresses are the on-chain identity — a single operator typically appears multiple times in the network as separate miner IDs sharing the same owner / worker / control / beneficiary addresses.</p>
+    <h2>Top {{.OperatorsShown}} operators</h2>
+    <p class="section-lead">Ranked by raw byte power. Owner addresses are the on-chain identity. <strong>{{.NarrativeFiftyPctOps}}</strong> of these control half the network.</p>
   </div>
   {{if .Operators}}
   <div class="table-scroll">
@@ -178,12 +216,13 @@
       <thead>
         <tr>
           <th class="rank">#</th>
-          <th>Owner(s)</th>
-          <th>Representative</th>
-          <th class="num">Miner IDs</th>
-          <th class="num">Raw power</th>
-          <th class="num">% net</th>
-          <th class="num">Reachable</th>
+          <th>Owner</th>
+          <th class="num">Miner&nbsp;IDs</th>
+          <th class="num">Raw&nbsp;power</th>
+          <th class="num">Share</th>
+          <th>Region</th>
+          <th class="num">Reach</th>
+          <th>Sample miner IDs</th>
         </tr>
       </thead>
       <tbody>
@@ -191,11 +230,12 @@
         <tr>
           <td class="rank">{{add $i 1}}</td>
           <td class="mono">{{opOwnerLabel $op.Owners}}</td>
-          <td class="mono dim">{{$op.Representative}}</td>
           <td class="num">{{len $op.Members}}</td>
-          <td class="num">{{powerPiB $op.RawBytePower}}<span class="dim"> PiB</span></td>
-          <td class="num">{{powerPctOfNetwork $op.RawBytePower $.Operators}}</td>
+          <td class="num power">{{powerPiB $op.RawBytePower}}<span class="dim"> PiB</span></td>
+          <td class="num pct">{{powerPctOfNetwork $op.RawBytePower $.Operators}}</td>
+          <td>{{operatorRegions $op}}</td>
           <td class="num reach">{{$op.ReachableMembers}}<span class="dim">/{{len $op.Members}}</span></td>
+          <td class="mono dim ellipsis">{{operatorMemberSample $op 2}}</td>
         </tr>
         {{end}}
       </tbody>
@@ -204,17 +244,17 @@
   {{else}}<p class="empty">No operator clustering data in this snapshot.</p>{{end}}
 </section>
 
-<!-- ======================== SPs by software ======================== -->
-<section id="sps" class="section">
+<!-- ======================== SOFTWARE ======================== -->
+<section id="software" class="section">
   <div class="section-header">
-    <h2>Storage providers by software</h2>
-    <p class="section-lead">Counts of miner IDs by detected daemon. <strong>private</strong> = peer ID published on chain but not dialable; <strong>no-peer-id</strong> = chain has no libp2p ID for this miner; <strong>other</strong> = dialed and got an unrecognised agent string.</p>
+    <h2>Storage software</h2>
+    <p class="section-lead">What daemon each miner ID actually runs, by libp2p identify probe. <strong>private</strong> = peer ID published on chain but not dialable; <strong>no-peer-id</strong> = no libp2p ID published; <strong>other</strong> = dialed but unrecognised agent.</p>
   </div>
   {{if .Aggregates.SPsBySoftware}}
   <div class="dist-grid">
   {{range $entry := softwareDistSorted .Aggregates.SPsBySoftware .Aggregates.SPsTotal}}
     <div class="dist-row sw-{{$entry.Name}}">
-      <img class="dist-logo" src="assets/logos/{{$entry.Logo}}" alt="" width="32" height="32" loading="lazy">
+      <div class="dist-logo-tile"><img class="dist-logo" src="assets/logos/{{$entry.Logo}}" alt="" width="32" height="32" loading="lazy"></div>
       <div class="dist-name">{{$entry.Name}}</div>
       <div class="dist-bar"><span style="width: {{printf "%.1f" $entry.Percent}}%"></span></div>
       <div class="dist-count">{{$entry.Count}}</div>
@@ -225,17 +265,17 @@
   {{else}}<p class="empty">No SP scan data in this snapshot.</p>{{end}}
 </section>
 
-<!-- ======================== Chain nodes ======================== -->
+<!-- ======================== CHAIN NODES ======================== -->
 <section id="chain" class="section">
   <div class="section-header">
-    <h2>Chain nodes by software</h2>
-    <p class="section-lead">Public-facing Lotus, Forest, and Venus full nodes our daemon is currently connected to via libp2p.</p>
+    <h2>Chain nodes</h2>
+    <p class="section-lead">Public-facing Lotus, Forest, and Venus full nodes our daemon is currently connected to via libp2p. Lotus and lotus-miner are different things — Lotus is the chain consensus daemon, lotus-miner is the (deprecated) SP daemon.</p>
   </div>
   {{if .Aggregates.ChainNodesBySW}}
   <div class="dist-grid">
   {{range $entry := softwareDistSorted .Aggregates.ChainNodesBySW .Aggregates.ChainNodesTotal}}
     <div class="dist-row sw-{{$entry.Name}}">
-      <img class="dist-logo" src="assets/logos/{{$entry.Logo}}" alt="" width="32" height="32" loading="lazy">
+      <div class="dist-logo-tile"><img class="dist-logo" src="assets/logos/{{$entry.Logo}}" alt="" width="32" height="32" loading="lazy"></div>
       <div class="dist-name">{{$entry.Name}}</div>
       <div class="dist-bar"><span style="width: {{printf "%.1f" $entry.Percent}}%"></span></div>
       <div class="dist-count">{{$entry.Count}}</div>
@@ -243,14 +283,14 @@
     </div>
   {{end}}
   </div>
-  {{else}}<p class="empty">No chain-node crawl data in this snapshot.</p>{{end}}
+  {{end}}
 </section>
 
 <!-- ======================== FoC ======================== -->
 <section id="foc" class="section">
   <div class="section-header">
     <h2>FoC providers</h2>
-    <p class="section-lead">Every PDP service registered on the on-chain ServiceProviderRegistry contract ({{len .FoCNodes}} listed). Status column is a live HTTP probe of <code>&lt;serviceURL&gt;/pdp/ping</code>.</p>
+    <p class="section-lead">PDP services registered on the on-chain ServiceProviderRegistry contract that are <strong>actually serving traffic</strong>. We list only HTTP-reachable providers (we don't promote dead ones).</p>
   </div>
   <div class="table-scroll">
     <table class="data-table foc-table">
@@ -259,66 +299,75 @@
           <th class="rank">#</th>
           <th>Name</th>
           <th>Service URL</th>
-          <th>Declared</th>
-          <th>Resolved</th>
+          <th>Region</th>
           <th class="num">HTTP</th>
-          <th>Server</th>
         </tr>
       </thead>
       <tbody>
-      {{range $n := .FoCNodes}}
-        <tr class="{{if $n.HTTPReachable}}reachable{{else}}unreachable{{end}}">
-          <td class="rank">{{$n.ProviderID}}</td>
-          <td class="foc-name">{{$n.Name}}</td>
-          <td class="mono ellipsis"><a href="{{$n.ServiceURL}}" rel="nofollow noopener">{{$n.ServiceURL}}</a></td>
-          <td class="dim">{{$n.DeclaredLocation}}</td>
-          <td class="dim">
-            {{range $g := $n.GeoIP}}
-              {{$g.CountryCode}}{{if $g.City}} ({{$g.City}}){{end}}{{if $g.ASN}} · AS{{$g.ASN}}{{end}}
-            {{else}}—{{end}}
-          </td>
-          <td class="num status">
-            {{if $n.HTTPReachable}}
-              <span class="ok">{{$n.HTTPStatusCode}}</span>
-            {{else}}
-              <span class="err" title="{{$n.HTTPError}}">×</span>
-            {{end}}
-          </td>
-          <td class="mono dim ellipsis">{{$n.HTTPServerHeader}}</td>
+      {{range .HealthyFoCNodes}}
+        <tr>
+          <td class="rank">{{.ProviderID}}</td>
+          <td class="foc-name">{{.Name}}</td>
+          <td class="mono ellipsis"><a href="{{.ServiceURL}}" rel="nofollow noopener">{{.ServiceURL}}</a></td>
+          <td>{{focRegion .}}</td>
+          <td class="num"><span class="ok">{{.HTTPStatusCode}}</span></td>
         </tr>
       {{end}}
       </tbody>
     </table>
   </div>
+  <p class="footer-note">{{.FoCHiddenCount}} additional providers registered on-chain but not currently HTTP-reachable; not shown.</p>
 </section>
 
-<!-- ======================== Methodology ======================== -->
+<!-- ======================== SUPPLY CONTEXT ======================== -->
+<section id="supply" class="section">
+  <div class="section-header">
+    <h2>Supply context</h2>
+    <p class="section-lead">FIL flows backing the storage layer. Pledge collateral is what SPs lock to commit storage; market collateral is what providers lock per active deal.</p>
+  </div>
+  <div class="concentration-band" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
+    <div class="cb-cell">
+      <div class="cb-num orange">{{commaFloat .NetworkTruth.PledgeFIL 0}}<span class="hl-unit">FIL</span></div>
+      <div class="cb-lbl">SP pledge collateral</div>
+    </div>
+    <div class="cb-cell">
+      <div class="cb-num blue">{{commaFloat .NetworkTruth.MarketLockedFIL 0}}<span class="hl-unit">FIL</span></div>
+      <div class="cb-lbl">Provider deal collateral</div>
+    </div>
+    <div class="cb-cell">
+      <div class="cb-num purple">{{commaInt .NetworkTruth.NextAllocationID}}</div>
+      <div class="cb-lbl">DataCap allocations</div>
+    </div>
+    <div class="cb-cell">
+      <div class="cb-num red">{{.NetworkTruth.MinerCount}}</div>
+      <div class="cb-lbl">Miners ever registered</div>
+    </div>
+    <div class="cb-cell">
+      <div class="cb-num dim">{{.NetworkTruth.MinerAboveMinPower}}</div>
+      <div class="cb-lbl">Active right now</div>
+    </div>
+  </div>
+  <p class="footer-note">{{commaFloat .NetworkTruth.PledgeFIL 0}} FIL of pledge collateral backs {{printf "%.2f" (div .NetworkTruth.RawPiB 1024)}} EiB of raw storage. As SPs exit and reclaim pledge, that FIL re-enters circulation.</p>
+</section>
+
+<!-- ======================== METHODOLOGY ======================== -->
 <section id="methodology" class="section">
   <div class="section-header">
     <h2>Methodology</h2>
   </div>
-  <div class="prose">
-    <h3>What we measure</h3>
-    <ul>
-      <li><strong>Storage providers:</strong> Active set from Filfox <code>/miner/list/power</code> (miners with consensus-eligible power). Each is probed once via libp2p identify; software is classified from the agent string and the supported protocol set.</li>
-      <li><strong>Chain nodes:</strong> Our own daemon's <code>NetPeers</code> + <code>NetAgentVersion</code>. This is the public-facing fleet of full nodes — private operator nodes that don't accept inbound connections won't appear.</li>
-      <li><strong>FoC providers:</strong> Read directly from the on-chain <code>ServiceProviderRegistry</code> contract (mainnet <code>0xf55dDbf63F1b55c3F1D4FA7e339a68AB7b64A5eB</code>). Each <code>serviceURL</code> is HTTP-probed at <code>/pdp/ping</code>.</li>
-      <li><strong>Operator clustering:</strong> Union-find over shared owner / worker / control / beneficiary addresses, plus shared IPs (with a CDN cap of 50 to avoid false unions through Cloudflare-like proxies). Zero-power miner IDs are excluded; they don't represent real entities.</li>
-    </ul>
-    <h3>What we don't measure</h3>
-    <ul>
-      <li>Private operator chain nodes (no public dial address).</li>
-      <li>SPs without a published peer ID (currently labelled <em>no-peer-id</em>).</li>
-      <li>Actual data stored / retrieval performance / deal volumes — those are different signals and live in DataCap / Spark / Filfox.</li>
-    </ul>
-    <h3>Reproducibility</h3>
-    <p>Every snapshot is published as a signed JSON file under <a href="data/">/data/</a>. Source: <a href="https://github.com/Reiers/sp-radar" rel="noopener">github.com/Reiers/sp-radar</a>. Run <code>filcensus census --network mainnet</code> against your own Lotus node to reproduce.</p>
-    <h3>Privacy &amp; opt-out</h3>
-    <p>We read what nodes broadcast publicly via libp2p identify, chain-published multiaddrs, and on-chain registry entries. No exploitation, no auth bypass, no private endpoints. Operators who want to be invisible should not advertise public dial addresses on chain. Email <a href="mailto:filcensus@reiers.io">filcensus@reiers.io</a> to be excluded from the published version (still counted in aggregates).</p>
+  <div class="callout-purple">
+    <h3>How we counted</h3>
+    <p><strong>1. Source data.</strong> Filecoin chain state via our own Lotus mainnet node JSON-RPC. Active SP set from Filfox <code>/miner/list/power</code>. FoC providers from on-chain <code>ServiceProviderRegistry</code> contract <code>0xf55dDbf63F1b55c3F1D4FA7e339a68AB7b64A5eB</code>.</p>
+    <p><strong>2. Operator deduplication.</strong> Union-find clustering on shared <em>Owner</em>, <em>Worker</em>, <em>Control</em>, <em>Beneficiary</em> addresses, plus shared IPs (with a 50-miner CDN cap to avoid false unions through Cloudflare-like proxies). Zero-power miner IDs are excluded.</p>
+    <p><strong>3. Software detection.</strong> libp2p <code>identify</code> probe on each peer; agent string + protocol set classified into Curio / Boost / lotus-miner / Venus-miner / Droplet / Markets / private / no-peer-id / other.</p>
+    <p><strong>4. Power split.</strong> QAP = raw + 9 × raw_verified, so verified-raw ≈ (QA − raw) / 9. CC = raw − verified.</p>
+    <p><strong>5. IP geolocation.</strong> db-ip.com free GeoLite2-compatible mmdb (city + ASN, monthly snapshot).</p>
+    <p><strong>6. FoC reachability.</strong> Live HTTP probe of each <code>serviceURL/pdp/ping</code> at snapshot time, with declared-vs-resolved location match.</p>
+    <p style="margin-bottom:0"><strong>Limitations.</strong> Operator dedup is structural-only (no manual heuristics); the previous report's tighter 73-operator number used additional naming-pattern signals not yet wired here. SP dial reachability is from a single vantage point. GeoIP reflects announced multiaddr IPs — VPN / relay endpoints can mislead.</p>
   </div>
 </section>
 
-<!-- ======================== Run details (compact) ======================== -->
+<!-- ======================== Run details ======================== -->
 <section id="run" class="section run-details">
   <div class="section-header">
     <h2>Snapshot run</h2>
@@ -329,7 +378,6 @@
     <dt>Duration</dt><dd>{{.Run.Duration}}</dd>
     {{range $phase, $dur := .Run.PhaseTimes}}<dt>{{$phase}}</dt><dd>{{$dur}}</dd>{{end}}
     <dt>Generator</dt><dd class="mono dim">{{.GeneratedBy}}</dd>
-    {{if .Run.Errors}}<dt>Errors</dt><dd><ul>{{range $e := .Run.Errors}}<li class="mono dim">{{$e}}</li>{{end}}</ul></dd>{{end}}
   </dl>
 </section>
 
@@ -338,7 +386,7 @@
 <footer class="site-footer">
   <div class="footer-inner">
     <p>filcensus · operator-published data via libp2p identify and on-chain ServiceProviderRegistry · refreshed every ~48h.</p>
-    <p class="muted">Logos used under fair-use citation; trademarks belong to their respective projects. Source available on <a href="https://github.com/Reiers/sp-radar" rel="noopener">GitHub</a>.</p>
+    <p class="muted">Logos used under fair-use citation; trademarks belong to their respective projects. Source on <a href="https://github.com/Reiers/sp-radar" rel="noopener">GitHub</a>.</p>
   </div>
 </footer>
 

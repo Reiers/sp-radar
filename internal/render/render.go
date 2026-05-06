@@ -25,6 +25,11 @@ import (
 
 	"github.com/Reiers/sp-radar/internal/snapshot"
 )
+// We use text/template (not html/template) deliberately. The few helpers
+// that return raw HTML (operatorRegions, focRegion country pills) are
+// trusted: they only emit our own static markup with attribute values
+// from a hard-coded palette map. No user-controlled string ever lands
+// inside the spliced HTML.
 
 //go:embed all:templates all:assets
 var embedded embed.FS
@@ -85,30 +90,92 @@ func softwareDistSorted(m map[string]int, total int) []SoftwareEntry {
 	return out
 }
 
-// PageData wraps a Snapshot with derived fields the template needs but that
-// don't make sense to persist (e.g. "how many operators do you need to
-// reach 50% of network power?" — cheap to compute, awkward to store).
+// PageData wraps a Snapshot with derived fields the template needs but
+// that don't make sense to persist. Computed once at render time.
 type PageData struct {
 	*snapshot.Snapshot
-	NarrativeFiftyPctOps  int
-	NarrativeNinetyPctOps int
 
-	// ActiveDealsApprox is hoisted to PageData so the template can use it
-	// directly without nil-checking NetworkTruth (which the snapshot may
-	// or may not have).
-	ActiveDealsApprox int64
+	// Concentration thresholds (smallest k such that top-k ops hold >= X%)
+	NarrativeFiftyPctOps        int
+	NarrativeSeventyFivePctOps  int
+	NarrativeNinetyPctOps       int
+	NarrativeNinetyFivePctOps   int
+	NarrativeNinetyNinePctOps   int
+
+	// Top-tier stacked-bar segments (top 1, 2-5, 6-10, 11-20, rest).
+	OperatorTiers []TierSeg
+
+	// QA / raw ratio (e.g. 8.7 means QA = 8.7 × raw)
+	QARawRatio float64
+	// Verified vs CC share of raw bytes
+	VerifiedSharePct float64
+	CCSharePct       float64
+
+	// Geo distribution (top countries by reachable IP count)
+	GeoTopCountries  []GeoSlice
+	GeoTotalIPs      int
+	GeoNarrativeTop2 string
+
+	// Healthy FoC subset (HTTP 2xx/3xx) + count of hidden providers
+	HealthyFoCNodes []snapshot.FoCNodeRecord
+	FoCHiddenCount  int
+
+	// Operators-table size (we render top N); exposed so the section
+	// header can reference the actual number.
+	OperatorsShown int
 }
 
-// buildPageData computes the derived narrative fields.
+// TierSeg is one segment of the top-tier stacked bar at the top of the
+// concentration section.
+type TierSeg struct {
+	Label    string  // e.g. "Top 5: 55%"
+	WidthPct float64 // 0..100 share of the bar
+	Gradient string  // CSS background gradient
+}
+
+// GeoSlice is one country slice for the donut + table.
+type GeoSlice struct {
+	CC        string  // ISO 2-letter
+	Name      string  // "China"
+	Count     int     // # of unique IPs
+	Pct       float64 // share of geolocated IPs
+	Color     string  // primary color (CSS)
+	ColorDark string  // gradient endpoint color
+	ArcPath   string  // SVG d= for the donut arc
+}
+
+// buildPageData computes all derived fields.
 func buildPageData(s *snapshot.Snapshot) *PageData {
 	pd := &PageData{Snapshot: s}
 	pd.NarrativeFiftyPctOps = opsForPowerThreshold(s.Operators, 0.50)
+	pd.NarrativeSeventyFivePctOps = opsForPowerThreshold(s.Operators, 0.75)
 	pd.NarrativeNinetyPctOps = opsForPowerThreshold(s.Operators, 0.90)
+	pd.NarrativeNinetyFivePctOps = opsForPowerThreshold(s.Operators, 0.95)
+	pd.NarrativeNinetyNinePctOps = opsForPowerThreshold(s.Operators, 0.99)
+	pd.OperatorTiers = buildTierSegments(s.Operators)
+	pd.OperatorsShown = minInt(30, len(s.Operators))
+
 	if s.NetworkTruth != nil {
-		pd.ActiveDealsApprox = s.NetworkTruth.ActiveDealsApprox
+		if s.NetworkTruth.RawPiB > 0 {
+			pd.QARawRatio = s.NetworkTruth.QAPiB / s.NetworkTruth.RawPiB
+		}
+		if s.NetworkTruth.RawPiB > 0 {
+			pd.VerifiedSharePct = 100 * s.NetworkTruth.VerifiedRawPiBEstimate / s.NetworkTruth.RawPiB
+			pd.CCSharePct = 100 - pd.VerifiedSharePct
+			if pd.CCSharePct < 0 {
+				pd.CCSharePct = 0
+			}
+		}
 	}
+
+	pd.GeoTopCountries, pd.GeoTotalIPs = buildGeoSlices(s.SPs)
+	pd.GeoNarrativeTop2 = geoNarrative(pd.GeoTopCountries)
+
+	pd.HealthyFoCNodes, pd.FoCHiddenCount = filterHealthyFoC(s.FoCNodes)
 	return pd
 }
+
+func minInt(a, b int) int { if a < b { return a }; return b }
 
 // opsForPowerThreshold returns the smallest k such that the top-k operators
 // (assumed sorted by power desc) hold >= frac of the total network power.
@@ -154,18 +221,26 @@ func Render(snap *snapshot.Snapshot, outDir string) error {
 		return fmt.Errorf("read template: %w", err)
 	}
 	funcs := template.FuncMap{
-		"softwareDistSorted": softwareDistSorted,
-		"add":               func(a, b int) int { return a + b },
-		"topOperators":      topOperators,
-		"powerPiB":          powerPiB,
-		"powerPctOfNetwork": powerPctOfNetwork,
-		"topNStrings":       topNStrings,
-		"commaInt":          commaInt,
-		"commaFloat":        commaFloat,
-		"powerHumanPiB":     powerHumanPiB,    // smart PiB / EiB switch
-		"opOwnerLabel":      opOwnerLabel,     // "4 owners (f01...)" or just one
-		"lorenzPath":        lorenzPath,       // SVG path d= for cumulative power chart
+		"softwareDistSorted":   softwareDistSorted,
+		"add":                  func(a, b int) int { return a + b },
+		"sub":                  func(a, b float64) float64 { return a - b },
+		"div":                  func(a, b float64) float64 { if b == 0 { return 0 }; return a / b },
+		"topOperators":         topOperators,
+		"powerPiB":             powerPiB,
+		"powerPctOfNetwork":    powerPctOfNetwork,
+		"topNStrings":          topNStrings,
+		"commaInt":             commaInt,
+		"commaFloat":           commaFloat,
+		"powerHumanPiB":        powerHumanPiB,
+		"opOwnerLabel":         opOwnerLabel,
+		"lorenzPath":           lorenzPath,
+		"operatorRegions":      operatorRegions,
+		"operatorMemberSample": operatorMemberSample,
+		"focRegion":            focRegion,
 	}
+	// Pre-populate the IP → CC lookup so operatorRegions can resolve.
+	populateOperatorIPCC(snap)
+
 	tpl, err := template.New("index").Funcs(funcs).Parse(string(tplBytes))
 	if err != nil {
 		return fmt.Errorf("parse template: %w", err)
