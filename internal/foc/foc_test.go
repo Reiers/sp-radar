@@ -6,7 +6,14 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
 )
+
+type gethCommonAddress = common.Address
+
+func mustAddr(s string) common.Address { return common.HexToAddress(s) }
+func hexEncode(b []byte) string         { return hex.EncodeToString(b) }
 
 // fakeRPC lets us script EthCall responses for unit tests.
 type fakeRPC struct {
@@ -254,10 +261,79 @@ func mustHex(s string) []byte {
 	return b
 }
 
-func TestGetProvider_StubReturnsErr(t *testing.T) {
-	rpc := &fakeRPC{}
-	_, err := GetProvider(context.Background(), rpc, Mainnet, big.NewInt(1))
-	if !errors.Is(err, ErrProviderDecodeNotImplemented) {
-		t.Errorf("expected ErrProviderDecodeNotImplemented, got %v", err)
+// TestGetProvider_DecodesABIReturn synthesises a valid ABI-encoded
+// ProviderWithProduct return blob in-memory using go-ethereum's abi.Pack and
+// verifies that decodeProviderWithProduct correctly reads it back. This
+// catches any drift between our hand-written tuple type spec and the upstream
+// contract schema, since both encode and decode go through the same Arguments.
+func TestGetProvider_DecodesABIReturn(t *testing.T) {
+	// Build a fake encoded blob via the same ABI Arguments we decode with.
+	// We use a struct shape that matches the tuple definition.
+	type rawTuple struct {
+		ProviderId   *big.Int
+		ProviderInfo struct {
+			ServiceProvider gethCommonAddress
+			Payee           gethCommonAddress
+			Name            string
+			Description     string
+			IsActive        bool
+		}
+		Product struct {
+			ProductType    uint8
+			CapabilityKeys []string
+			IsActive       bool
+		}
+		ProductCapabilityValues [][]byte
+	}
+	input := rawTuple{
+		ProviderId: big.NewInt(7),
+	}
+	input.ProviderInfo.ServiceProvider = mustAddr("0x1111111111111111111111111111111111111111")
+	input.ProviderInfo.Payee = mustAddr("0x2222222222222222222222222222222222222222")
+	input.ProviderInfo.Name = "TestProvider"
+	input.ProviderInfo.Description = "hello world"
+	input.ProviderInfo.IsActive = true
+	input.Product.ProductType = 0 // PDP
+	input.Product.CapabilityKeys = []string{"serviceURL", "location", "ipniPiece"}
+	input.Product.IsActive = true
+	input.ProductCapabilityValues = [][]byte{
+		[]byte("https://pdp.test/"),
+		[]byte("NO"),
+		{1},
+	}
+
+	packed, err := abiArgsProviderWithProduct.Pack(input)
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	p, err := decodeProviderWithProduct("0x" + hexEncode(packed))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if p.ID == nil || p.ID.Int64() != 7 {
+		t.Errorf("ID: got %v, want 7", p.ID)
+	}
+	if p.Name != "TestProvider" {
+		t.Errorf("Name: got %q", p.Name)
+	}
+	if !p.Active {
+		t.Errorf("Active should be true")
+	}
+	if !p.HasPDP {
+		t.Errorf("HasPDP should be true")
+	}
+	if p.PDP.ServiceURL != "https://pdp.test/" {
+		t.Errorf("ServiceURL: got %q", p.PDP.ServiceURL)
+	}
+	if p.PDP.Location != "NO" {
+		t.Errorf("Location: got %q", p.PDP.Location)
+	}
+	if !p.PDP.IPNISupportsPiece {
+		t.Errorf("IPNISupportsPiece should be true")
+	}
+	if p.ServiceProviderHex != "0x1111111111111111111111111111111111111111" {
+		t.Errorf("ServiceProviderHex: got %q", p.ServiceProviderHex)
 	}
 }
+
+

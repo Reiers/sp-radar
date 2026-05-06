@@ -33,6 +33,9 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // Network identifies which deployment of the registry to talk to.
@@ -315,22 +318,197 @@ func bytesToBig(b []byte) *big.Int {
 	return new(big.Int).SetBytes(b)
 }
 
-// --- placeholder: getProviderWithProduct decoder ---
+// --- getProviderWithProduct decoder ---
 //
-// The full ProviderWithProduct return is a tuple-of-tuples-with-dynamic-strings,
-// which is annoyingly verbose to decode by hand. We stage it: counts and ID
-// enumeration land in this commit (they're primitive returns), and the per-
-// provider record decoder lands in the next commit so it gets its own focused
-// review.
+// ABI return shape (verified against synapse-core abis/generated.ts):
+//
+//   ProviderWithProduct = tuple(
+//     uint256                                      providerId,
+//     tuple(address, address, string, string, bool) providerInfo,
+//     tuple(uint8, string[], bool)                 product,
+//     bytes[]                                      productCapabilityValues,
+//   )
+//
+// providerInfo  = (serviceProvider, payee, name, description, isActive)
+// product       = (productType, capabilityKeys, isActive)
+//
+// We construct the matching go-ethereum ABI Arguments once at init time and
+// reuse it for every decode.
 
-// ErrProviderDecodeNotImplemented is returned by GetProvider while the per-
-// provider ABI decoder is pending. The collector entry point falls back to
-// ID-only enumeration in this case so the rest of the pipeline can run.
-var ErrProviderDecodeNotImplemented = errors.New("foc: per-provider ABI decoder not yet implemented (ID enumeration works)")
+var (
+	abiTypeProviderInfo abi.Type
+	abiTypeProduct      abi.Type
+	abiTypeBytesArray   abi.Type
+	abiArgsProviderWithProduct abi.Arguments
+)
 
-// GetProvider reads a single provider record by ID. Currently returns
-// ErrProviderDecodeNotImplemented; the collector should fall back to
-// ID-only enumeration until this is wired.
+func init() {
+	var err error
+	abiTypeProviderInfo, err = abi.NewType("tuple", "", []abi.ArgumentMarshaling{
+		{Name: "serviceProvider", Type: "address"},
+		{Name: "payee", Type: "address"},
+		{Name: "name", Type: "string"},
+		{Name: "description", Type: "string"},
+		{Name: "isActive", Type: "bool"},
+	})
+	if err != nil {
+		panic("foc init: providerInfo type: " + err.Error())
+	}
+	abiTypeProduct, err = abi.NewType("tuple", "", []abi.ArgumentMarshaling{
+		{Name: "productType", Type: "uint8"},
+		{Name: "capabilityKeys", Type: "string[]"},
+		{Name: "isActive", Type: "bool"},
+	})
+	if err != nil {
+		panic("foc init: product type: " + err.Error())
+	}
+	abiTypeBytesArray, err = abi.NewType("bytes[]", "", nil)
+	if err != nil {
+		panic("foc init: bytes[] type: " + err.Error())
+	}
+	abiUint256, _ := abi.NewType("uint256", "", nil)
+
+	// Outer return is a single tuple of (uint256, tuple, tuple, bytes[]).
+	outerTuple, err := abi.NewType("tuple", "", []abi.ArgumentMarshaling{
+		{Name: "providerId", Type: "uint256"},
+		{Name: "providerInfo", Type: "tuple", Components: []abi.ArgumentMarshaling{
+			{Name: "serviceProvider", Type: "address"},
+			{Name: "payee", Type: "address"},
+			{Name: "name", Type: "string"},
+			{Name: "description", Type: "string"},
+			{Name: "isActive", Type: "bool"},
+		}},
+		{Name: "product", Type: "tuple", Components: []abi.ArgumentMarshaling{
+			{Name: "productType", Type: "uint8"},
+			{Name: "capabilityKeys", Type: "string[]"},
+			{Name: "isActive", Type: "bool"},
+		}},
+		{Name: "productCapabilityValues", Type: "bytes[]"},
+	})
+	if err != nil {
+		panic("foc init: outer tuple type: " + err.Error())
+	}
+	abiArgsProviderWithProduct = abi.Arguments{{Type: outerTuple}}
+	_ = abiUint256 // referenced indirectly
+}
+
+// providerWithProductRaw mirrors the ABI tuple shape so the decoder can
+// unpack into it via reflection.
+type providerWithProductRaw struct {
+	ProviderId   *big.Int
+	ProviderInfo struct {
+		ServiceProvider common.Address
+		Payee           common.Address
+		Name            string
+		Description     string
+		IsActive        bool
+	}
+	Product struct {
+		ProductType    uint8
+		CapabilityKeys []string
+		IsActive       bool
+	}
+	ProductCapabilityValues [][]byte
+}
+
+// decodeProviderWithProduct decodes the raw 0x-prefixed return data of
+// getProviderWithProduct(uint256, uint8) into a Provider.
+func decodeProviderWithProduct(returnHex string) (*Provider, error) {
+	raw, err := hexBytes(returnHex)
+	if err != nil {
+		return nil, err
+	}
+	unpacked, err := abiArgsProviderWithProduct.Unpack(raw)
+	if err != nil {
+		return nil, fmt.Errorf("abi unpack: %w", err)
+	}
+	if len(unpacked) != 1 {
+		return nil, fmt.Errorf("unexpected unpack length %d", len(unpacked))
+	}
+	// The outer tuple is unpacked as an anonymous struct from go-ethereum's abi.
+	// We re-marshal via the convertProviderWithProduct helper.
+	p, err := convertProviderWithProduct(unpacked[0])
+	if err != nil {
+		return nil, fmt.Errorf("convert: %w", err)
+	}
+	return p, nil
+}
+
+// convertProviderWithProduct turns the abi.Unpack output (a struct value
+// reflectively shaped like the tuple) into our Provider.
+func convertProviderWithProduct(v interface{}) (*Provider, error) {
+	// go-ethereum's abi unpacks tuples into a struct with Capitalized fields
+	// matching the tuple component names. We use a typed asserter via the
+	// 'providerWithProductRaw' shape; abi will accept it because field types
+	// and order line up.
+	//
+	// However the unpacker returns interface{} pointing to its own anonymous
+	// struct. We reflect/extract via type-asserting on a known struct shape
+	// generated by abi.ConvertType.
+	var typed providerWithProductRaw
+	if err := abiCopyTuple(v, &typed); err != nil {
+		return nil, err
+	}
+
+	caps := make(map[string][]byte, len(typed.Product.CapabilityKeys))
+	if n := len(typed.Product.CapabilityKeys); n != len(typed.ProductCapabilityValues) {
+		return nil, fmt.Errorf("capability key/value length mismatch: %d keys, %d values", n, len(typed.ProductCapabilityValues))
+	}
+	for i, k := range typed.Product.CapabilityKeys {
+		caps[k] = typed.ProductCapabilityValues[i]
+	}
+	pdp := DecodePDPCapabilities(caps)
+
+	return &Provider{
+		ID:                 new(big.Int).Set(typed.ProviderId),
+		ServiceProviderHex: strings.ToLower(typed.ProviderInfo.ServiceProvider.Hex()),
+		PayeeHex:           strings.ToLower(typed.ProviderInfo.Payee.Hex()),
+		Name:               typed.ProviderInfo.Name,
+		Description:        typed.ProviderInfo.Description,
+		Active:             typed.ProviderInfo.IsActive,
+		HasPDP:             typed.Product.IsActive && typed.Product.ProductType == ProductPDP,
+		PDP:                pdp,
+	}, nil
+}
+
+// abiCopyTuple uses go-ethereum's abi reflection helper to copy from the
+// anonymous struct returned by Unpack into a named struct. Wraps the panic-
+// prone reflection path with an error return.
+func abiCopyTuple(src interface{}, dst interface{}) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("abi copy panic: %v", r)
+		}
+	}()
+	// abi.ConvertType returns a value already shaped like dst; no extra work.
+	converted := abi.ConvertType(src, dst)
+	// converted is the same pointer as dst when dst is a pointer; nothing to do.
+	_ = converted
+	return nil
+}
+
+// GetProvider reads a single provider record by ID via getProviderWithProduct.
+// productType defaults to PDP (the only product today).
 func GetProvider(ctx context.Context, rpc EthCaller, network Network, id *big.Int) (*Provider, error) {
-	return nil, ErrProviderDecodeNotImplemented
+	to := RegistryAddress(network)
+	if to == "" {
+		return nil, fmt.Errorf("foc: unknown network %q", network)
+	}
+	if id == nil {
+		return nil, errors.New("foc: nil provider id")
+	}
+	data := "0x" + selGetProviderWithProduct + encodeUint256(id) + encodeUint8(ProductPDP)
+	out, err := rpc.EthCall(ctx, to, data)
+	if err != nil {
+		return nil, fmt.Errorf("eth_call getProviderWithProduct: %w", err)
+	}
+	return decodeProviderWithProduct(out)
+}
+
+// encodeUint8 returns a 32-byte big-endian hex (no 0x prefix) for a uint8
+// value, matching the ABI right-padded layout for small ints.
+func encodeUint8(v uint8) string {
+	b := make([]byte, 32)
+	b[31] = v
+	return hex.EncodeToString(b)
 }
