@@ -21,7 +21,7 @@ Group=filcensus
 #   chmod 600 /etc/filcensus/push-token
 #   chown filcensus:filcensus /etc/filcensus/push-token
 ExecStart=/usr/local/bin/filcensusd \
-  --addr 127.0.0.1:8443 \
+  --addr 127.0.0.1:8770 \
   --snapshots /var/lib/filcensus/snapshots \
   --site /var/lib/filcensus/site \
   --token-file /etc/filcensus/push-token
