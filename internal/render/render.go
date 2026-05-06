@@ -66,10 +66,36 @@ var softwareLogos = map[string]string{
 	"unknown":     "unknown.svg",
 }
 
+// softwareDisplayLabel maps internal detect.Software identifiers to the
+// human-friendly label shown on the dashboard. "unknown" is renamed to
+// "custom software" since every reachable SP we couldn't parse is
+// running *something* — just not a known agent string.
+var softwareDisplayLabel = map[string]string{
+	"unknown":     "custom software",
+	"other":       "custom software",
+	"private":     "private (firewalled)",
+	"no-peer-id":  "no peer ID published",
+	"lotus-miner": "lotus-miner (legacy)",
+	"venus-miner": "venus-miner",
+}
+
+func softwareDisplayName(sw string) string {
+	if n, ok := softwareDisplayLabel[sw]; ok {
+		return n
+	}
+	return sw
+}
+
 // softwareDistSorted converts a sw→count map to a percentage-sorted slice.
-// Exposed to templates as a func.
-func softwareDistSorted(m map[string]int, total int) []SoftwareEntry {
-	out := make([]SoftwareEntry, 0, len(m))
+// Exposed to templates as a func. Display name is humanised; the internal
+// `Slug` is preserved for CSS class lookups (`sw-{slug}`).
+type softwareEntryV2 struct {
+	SoftwareEntry
+	Slug string // internal sw name for CSS classes
+}
+
+func softwareDistSorted(m map[string]int, total int) []softwareEntryV2 {
+	out := make([]softwareEntryV2, 0, len(m))
 	for sw, c := range m {
 		pct := 0.0
 		if total > 0 {
@@ -79,7 +105,10 @@ func softwareDistSorted(m map[string]int, total int) []SoftwareEntry {
 		if logo == "" {
 			logo = "unknown.svg"
 		}
-		out = append(out, SoftwareEntry{Name: sw, Logo: logo, Count: c, Percent: pct})
+		out = append(out, softwareEntryV2{
+			SoftwareEntry: SoftwareEntry{Name: softwareDisplayName(sw), Logo: logo, Count: c, Percent: pct},
+			Slug:          sw,
+		})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Count != out[j].Count {
