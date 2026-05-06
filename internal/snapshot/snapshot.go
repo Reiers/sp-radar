@@ -97,6 +97,12 @@ type SPRecord struct {
 	FilrepReachability string  `json:"filrep_reachability,omitempty"` // "reachable" | "unreachable" | "unknown"
 	FilrepUptime       float64 `json:"filrep_uptime,omitempty"`
 	FilrepCountryCode  string  `json:"filrep_country_code,omitempty"`
+
+	// Power deltas from Filfox over the most recent measurement window.
+	// Negative = losing power (declining); positive = gaining. Big-int
+	// decimal strings to match RawBytePower / QualityAdjPower precision.
+	RawBytePowerDelta    string `json:"raw_byte_power_delta,omitempty"`
+	QualityAdjPowerDelta string `json:"quality_adj_power_delta,omitempty"`
 }
 
 // ChainNodeRecord is one row per chain (full-node) peer we discovered via

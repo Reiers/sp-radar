@@ -14,7 +14,7 @@ import (
 
 // buildTierSegments groups operators into the classic Pareto tiers
 // (top 1, 2-5, 6-10, 11-20, rest) and produces stacked-bar segments
-// labelled with cumulative share, mirroring the SP census report style.
+// labelled with own share + cumulative share, mirroring the SP census report.
 func buildTierSegments(ops []snapshot.Operator) []TierSeg {
 	if len(ops) == 0 {
 		return nil
@@ -22,14 +22,14 @@ func buildTierSegments(ops []snapshot.Operator) []TierSeg {
 	type slot struct {
 		from, to int
 		grad     string
-		name     string
+		rank     string
 	}
 	slots := []slot{
-		{0, 1, "linear-gradient(90deg, #F85149, #DB61A2)", "Top 1"},
-		{1, 5, "linear-gradient(90deg, #DB61A2, #A371F7)", "+2-5"},
-		{5, 10, "linear-gradient(90deg, #A371F7, #58A6FF)", "+6-10"},
-		{10, 20, "linear-gradient(90deg, #58A6FF, #3FB950)", "+11-20"},
-		{20, len(ops), "var(--surface2)", "Rest"},
+		{0, 1, "linear-gradient(90deg, #D32F2F, #C2185B)", "Top 1"},
+		{1, 5, "linear-gradient(90deg, #C2185B, #6A1B9A)", "Ranks 2-5"},
+		{5, 10, "linear-gradient(90deg, #6A1B9A, #1565C0)", "Ranks 6-10"},
+		{10, 20, "linear-gradient(90deg, #1565C0, #2E8B57)", "Ranks 11-20"},
+		{20, len(ops), "linear-gradient(90deg, #8493AE, #5B6B8C)", "All others"},
 	}
 	total := new(big.Int)
 	for _, op := range ops {
@@ -42,6 +42,7 @@ func buildTierSegments(ops []snapshot.Operator) []TierSeg {
 	}
 	totalF := new(big.Float).SetInt(total)
 	var segs []TierSeg
+	cum := 0.0
 	for _, s := range slots {
 		if s.from >= len(ops) {
 			break
@@ -57,13 +58,15 @@ func buildTierSegments(ops []snapshot.Operator) []TierSeg {
 			}
 		}
 		share, _ := new(big.Float).Quo(new(big.Float).SetInt(sum), totalF).Float64()
+		cum += share * 100
 		segs = append(segs, TierSeg{
-			Label:    fmt.Sprintf("%s: %.0f%%", s.name, share*100),
-			WidthPct: math.Max(share*100, 4), // floor so very-thin segments stay readable
-			Gradient: s.grad,
+			Rank:       s.rank,
+			Share:      share * 100,
+			Cumulative: cum,
+			WidthPct:   math.Max(share*100, 6.5), // floor so very-thin segments stay readable
+			Gradient:   s.grad,
 		})
 	}
-	// Re-normalise widths to sum to 100 so the bar fills cleanly even after the floor.
 	var sumW float64
 	for _, s := range segs {
 		sumW += s.WidthPct
@@ -297,6 +300,68 @@ func operatorMemberSample(op snapshot.Operator, n int) string {
 	return fmt.Sprintf("%s +%d", strings.Join(op.Members[:n], ", "), len(op.Members)-n)
 }
 
+// --- DECLINING MINERS ---
+
+// buildDecliningMiners walks the SP records, picks the ones with negative
+// rawBytePowerDelta, sorts by largest absolute loss, and returns the top N
+// rows for the dashboard plus aggregate counts.
+func buildDecliningMiners(sps []snapshot.SPRecord, topN int) ([]DeclineRow, int, float64) {
+	const piB = float64(1 << 50)
+	var all []DeclineRow
+	totalLoss := 0.0
+	for _, sp := range sps {
+		if sp.RawBytePowerDelta == "" || sp.RawBytePowerDelta == "0" {
+			continue
+		}
+		delta, ok := new(big.Int).SetString(sp.RawBytePowerDelta, 10)
+		if !ok || delta.Sign() >= 0 {
+			continue
+		}
+		cur, _ := new(big.Int).SetString(sp.RawBytePower, 10)
+		if cur == nil {
+			cur = new(big.Int)
+		}
+		deltaF := new(big.Float).SetInt(delta)
+		deltaPiB, _ := new(big.Float).Quo(deltaF, big.NewFloat(piB)).Float64()
+		curPiB := 0.0
+		if cur.Sign() > 0 {
+			cF := new(big.Float).SetInt(cur)
+			curPiB, _ = new(big.Float).Quo(cF, big.NewFloat(piB)).Float64()
+		}
+		declinePct := 0.0
+		if cur.Sign() > 0 {
+			// pct of the *prior* power (cur + |delta|)
+			prior := new(big.Int).Sub(cur, delta) // delta is negative, so subtracting adds |delta|
+			if prior.Sign() > 0 {
+				priorF := new(big.Float).SetInt(prior)
+				absDelta := new(big.Float).Abs(deltaF)
+				pct, _ := new(big.Float).Quo(absDelta, priorF).Float64()
+				declinePct = -pct * 100
+			}
+		}
+		cc := ""
+		if len(sp.GeoIP) > 0 {
+			cc = strings.ToUpper(sp.GeoIP[0].CountryCode)
+		}
+		all = append(all, DeclineRow{
+			MinerID:    sp.MinerID,
+			CurrentPiB: curPiB,
+			DeltaPiB:   deltaPiB,
+			DeclinePct: declinePct,
+			CountryCC:  cc,
+		})
+		totalLoss += deltaPiB // negative
+	}
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].DeltaPiB < all[j].DeltaPiB
+	})
+	top := all
+	if topN > 0 && len(all) > topN {
+		top = all[:topN]
+	}
+	return top, len(all), totalLoss
+}
+
 // --- FoC FILTER ---
 
 // filterHealthyFoC returns only the FoC providers we want to publicly list:
@@ -325,6 +390,17 @@ func isHealthyFoC(r snapshot.FoCNodeRecord) bool {
 		return false
 	}
 	return true
+}
+
+// regionPillByCC returns the country-pill HTML span for a given ISO code,
+// or an em-dash if empty/unknown. Used by the declining miners table.
+func regionPillByCC(cc string) string {
+	cc = strings.ToUpper(strings.TrimSpace(cc))
+	if cc == "" {
+		return "—"
+	}
+	c1, _ := paletteFor(cc)
+	return fmt.Sprintf(`<span class="country-pill" style="--cc-color: %s"><span class="country-dot"></span>%s</span>`, c1, cc)
 }
 
 // focRegion returns a country pill for a FoC provider based on resolved GeoIP.

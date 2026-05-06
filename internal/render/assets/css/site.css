@@ -307,21 +307,61 @@ main { max-width: var(--max-w); margin: 0 auto; padding: 0 1.5rem; }
 /* --- Stacked tier bar (rounded, pill ends) --- */
 .tier-bar {
   display: flex;
-  height: 56px;
+  height: 64px;
   border-radius: var(--radius-pill);
   overflow: hidden;
-  margin: 0.75rem 0 1.25rem;
-  box-shadow: var(--shadow-sm);
+  margin: 0.85rem 0 1.5rem;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-2);
+  position: relative;
 }
 .tier-seg {
-  display: flex; align-items: center; justify-content: center;
-  font-size: 0.85rem; font-weight: 700; color: #fff;
-  min-width: 60px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-size: 0.85rem;
+  color: #fff;
+  min-width: 70px;
   white-space: nowrap;
-  padding: 0 0.5rem;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  padding: 0 0.6rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+  position: relative;
 }
-.tier-seg .tier-label { display: inline-block; }
+.tier-seg:last-child { border-right: none; }
+.tier-seg .tier-rank {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  margin-bottom: 0.1rem;
+}
+.tier-seg .tier-pct {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.tier-seg .tier-cum {
+  font-size: 0.6rem;
+  opacity: 0.75;
+  margin-top: 0.15rem;
+  font-feature-settings: "tnum";
+}
+/* Below the bar we render a small legend strip aligned to each segment */
+.tier-bar-legend {
+  display: flex;
+  margin: -0.5rem 0 1.25rem;
+  font-size: 0.72rem;
+  color: var(--dim);
+  padding: 0 0.25rem;
+}
+.tier-bar-legend .tl-cell {
+  text-align: center;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+  padding-top: 0.4rem;
+}
 
 /* --- Charts --- */
 .chart {

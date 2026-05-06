@@ -132,7 +132,7 @@ func Run(ctx context.Context, opts Options) ([]snapshot.SPRecord, error) {
 	// Phase 3: probe via libp2p
 	records := probeAll(ctx, rpc, h, qualified, opts)
 
-	// Attach source tags + Filrep enrichment metadata per record.
+	// Attach source tags + Filrep enrichment + Filfox power delta per record.
 	for i := range records {
 		addr := records[i].MinerID
 		if tags, ok := sourceTagsByAddr[addr]; ok {
@@ -145,6 +145,10 @@ func Run(ctx context.Context, opts Options) ([]snapshot.SPRecord, error) {
 			}
 			records[i].FilrepCountryCode = fm.IsoCode
 			records[i].SourceTags = append(records[i].SourceTags, "filrep-meta")
+		}
+		if ff, ok := FilfoxDeltaByAddr[addr]; ok {
+			records[i].RawBytePowerDelta = ff.RawBytePowerDelta
+			records[i].QualityAdjPowerDelta = ff.QualityAdjPowerDelta
 		}
 	}
 	return records, nil

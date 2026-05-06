@@ -102,11 +102,13 @@
     <div class="cb-cell"><div class="cb-num dim">{{.NarrativeNinetyNinePctOps}}</div><div class="cb-lbl">For 99%</div></div>
   </div>
 
-  <h3 class="subhead">Top tiers vs the rest</h3>
+  <h3 class="subhead">How the top tiers stack up</h3>
   <div class="tier-bar">
     {{range .OperatorTiers}}
-      <div class="tier-seg" style="width: {{printf "%.1f" .WidthPct}}%; background: {{.Gradient}}" title="{{.Label}}">
-        <span class="tier-label">{{.Label}}</span>
+      <div class="tier-seg" style="width: {{printf "%.2f" .WidthPct}}%; background: {{.Gradient}}" title="{{.Rank}} — {{printf "%.1f" .Share}}% of network (cumulative {{printf "%.1f" .Cumulative}}%)">
+        <span class="tier-rank">{{.Rank}}</span>
+        <span class="tier-pct">{{printf "%.0f" .Share}}%</span>
+        <span class="tier-cum">cum {{printf "%.0f" .Cumulative}}%</span>
       </div>
     {{end}}
   </div>
@@ -250,6 +252,47 @@
   </div>
   {{end}}
 </section>
+
+<!-- ======================== DECLINING / EXITING SPs ======================== -->
+{{if .DecliningMiners}}
+<section id="declining" class="section">
+  <div class="section-header">
+    <h2>Storage providers exiting the network</h2>
+    <p class="section-lead">
+      <strong>{{.DecliningTotalCount}} miners are currently losing power</strong> (net <strong>{{printf "%.2f" .DecliningTotalLossPiB}} PiB</strong> raw across all decliners this measurement period). When power drops to zero the SP is effectively exiting; pledge collateral unlocks back into circulation.
+    </p>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="rank">#</th>
+          <th>Miner ID</th>
+          <th>Region</th>
+          <th class="num">Current power</th>
+          <th class="num">Change</th>
+          <th class="num">Decline %</th>
+        </tr>
+      </thead>
+      <tbody>
+      {{range $i, $r := .DecliningMiners}}
+        <tr>
+          <td class="rank">{{add $i 1}}</td>
+          <td class="mono">{{$r.MinerID}}</td>
+          <td>{{regionPillByCC $r.CountryCC}}</td>
+          <td class="num">{{printf "%.2f" $r.CurrentPiB}}<span class="dim"> PiB</span></td>
+          <td class="num" style="color: var(--red); font-weight: 600;">{{printf "%+.3f" $r.DeltaPiB}}<span class="dim"> PiB</span></td>
+          <td class="num" style="color: var(--red);">{{printf "%+.1f" $r.DeclinePct}}%</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{if gt .DecliningTotalCount 20}}
+  <p class="footer-note">{{.DecliningTotalCount}} declining miners total; top 20 shown by absolute loss.</p>
+  {{end}}
+</section>
+{{end}}
 
 <!-- ======================== SOFTWARE ======================== -->
 <section id="software" class="section">

@@ -152,14 +152,31 @@ type PageData struct {
 	// Operators-table size (we render top N); exposed so the section
 	// header can reference the actual number.
 	OperatorsShown int
+
+	// Declining miners: SPs whose Filfox rawBytePowerDelta is negative.
+	// Sorted by largest absolute decline first. We surface the top N on
+	// the dashboard and roll the rest into a footnote.
+	DecliningMiners      []DeclineRow
+	DecliningTotalCount  int     // total miners with negative delta
+	DecliningTotalLossPiB float64 // aggregate raw-PiB loss across the decliners
 }
 
-// TierSeg is one segment of the top-tier stacked bar at the top of the
-// concentration section.
+// DeclineRow is one row in the Declining storage providers section.
+type DeclineRow struct {
+	MinerID    string
+	CurrentPiB float64
+	DeltaPiB   float64 // negative
+	DeclinePct float64 // negative
+	CountryCC  string  // for the region pill (best-effort)
+}
+
+// TierSeg is one segment of the top-tier stacked bar.
 type TierSeg struct {
-	Label    string  // e.g. "Top 5: 55%"
-	WidthPct float64 // 0..100 share of the bar
-	Gradient string  // CSS background gradient
+	Rank       string  // e.g. "Top 1", "Ranks 2-5"
+	Share      float64 // own share of total power, 0..100
+	Cumulative float64 // running total at end of this segment, 0..100
+	WidthPct   float64 // CSS width allocation (with min-floor for legibility)
+	Gradient   string  // CSS background gradient
 }
 
 // GeoSlice is one country slice for the donut + table.
@@ -201,6 +218,7 @@ func buildPageData(s *snapshot.Snapshot) *PageData {
 	pd.GeoNarrativeTop2 = geoNarrative(pd.GeoTopCountries)
 
 	pd.HealthyFoCNodes, pd.FoCHiddenCount = filterHealthyFoC(s.FoCNodes)
+	pd.DecliningMiners, pd.DecliningTotalCount, pd.DecliningTotalLossPiB = buildDecliningMiners(s.SPs, 20)
 	return pd
 }
 
@@ -266,6 +284,7 @@ func Render(snap *snapshot.Snapshot, outDir string) error {
 		"operatorRegions":      operatorRegions,
 		"operatorMemberSample": operatorMemberSample,
 		"focRegion":            focRegion,
+		"regionPillByCC":       regionPillByCC,
 	}
 	// Pre-populate the IP → CC lookup so operatorRegions can resolve.
 	populateOperatorIPCC(snap)

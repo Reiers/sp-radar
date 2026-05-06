@@ -20,14 +20,27 @@ type filfoxPowerPage struct {
 }
 
 type filfoxMinerEntry struct {
-	Address         string `json:"address"`
-	RawBytePower    string `json:"rawBytePower"`
-	QualityAdjPower string `json:"qualityAdjPower"`
+	Address              string `json:"address"`
+	RawBytePower         string `json:"rawBytePower"`
+	QualityAdjPower      string `json:"qualityAdjPower"`
+	RawBytePowerDelta    string `json:"rawBytePowerDelta"`
+	QualityAdjPowerDelta string `json:"qualityAdjPowerDelta"`
 }
+
+// FilfoxDeltaByAddr is the per-miner power delta from the most recent
+// Filfox measurement period (typically 24h or 1 epoch-aligned window).
+// Negative = losing power; positive = gaining. Populated as a side-effect
+// of fetchFilfoxActiveMiners and exposed for the runner to attach to
+// SPRecord.
+var FilfoxDeltaByAddr map[string]filfoxMinerEntry
 
 // fetchFilfoxActiveMiners returns the full set of currently-active miners
 // from Filfox, with their power already attached. This avoids doing 750k
 // StateMinerPower lookups against the chain just to filter to ~700 actives.
+//
+// As a side-effect, populates FilfoxDeltaByAddr so the runner can attach
+// rawBytePowerDelta / qualityAdjPowerDelta to each SP record without
+// re-fetching.
 //
 // Public API. Be polite: 0.3s delay between pages.
 func fetchFilfoxActiveMiners(ctx context.Context, onProgress func(string, int64, int64)) ([]qualifiedSP, error) {
@@ -76,6 +89,10 @@ func fetchFilfoxActiveMiners(ctx context.Context, onProgress func(string, int64,
 				qual = new(big.Int)
 			}
 			out = append(out, qualifiedSP{addr: m.Address, rawPower: raw, qualPower: qual})
+			if FilfoxDeltaByAddr == nil {
+				FilfoxDeltaByAddr = make(map[string]filfoxMinerEntry)
+			}
+			FilfoxDeltaByAddr[m.Address] = m
 		}
 		if onProgress != nil {
 			onProgress("filfox-list", int64(len(out)), int64(total))
