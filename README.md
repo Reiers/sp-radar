@@ -29,10 +29,6 @@ It exists because the headline numbers everyone repeats — "Filecoin has X mine
 
 ## Dashboard
 
-<a href="https://filcensus.reiers.io">
-  <img src="docs/img/dashboard.png" alt="filcensus dashboard" width="100%">
-</a>
-
 The live dashboard at **[filcensus.reiers.io](https://filcensus.reiers.io)** updates every ~48h with a fresh snapshot. Every section has a thesis, not a label:
 
 | Section | What it tells you |

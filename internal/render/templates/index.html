@@ -74,11 +74,11 @@
     <div class="hl-lbl">Run 50% of power</div>
   </div>
   <div class="hl">
-    <div class="hl-num pink">{{commaInt .NetworkTruth.ActiveDealsApprox}}</div>
+    <div class="hl-num pink">{{humanInt .NetworkTruth.ActiveDealsApprox}}</div>
     <div class="hl-lbl">Active deals (est.)</div>
   </div>
   <div class="hl">
-    <div class="hl-num warn">{{commaFloat .NetworkTruth.PledgeFIL 0}}<span class="hl-unit">FIL</span></div>
+    <div class="hl-num warn">{{humanFloat .NetworkTruth.PledgeFIL}}<span class="hl-unit">FIL</span></div>
     <div class="hl-lbl">Pledge collateral</div>
   </div>
 </section>

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -286,6 +287,8 @@ func Render(snap *snapshot.Snapshot, outDir string) error {
 		"topNStrings":          topNStrings,
 		"commaInt":             commaInt,
 		"commaFloat":           commaFloat,
+		"humanInt":             humanInt,
+		"humanFloat":           humanFloat,
 		"powerHumanPiB":        powerHumanPiB,
 		"opOwnerLabel":         opOwnerLabel,
 		"lorenzPath":           lorenzPath,
@@ -425,6 +428,39 @@ func lorenzPath(ops []snapshot.Operator) string {
 		b.WriteString(fmt.Sprintf(" L %.1f %.1f", x, y))
 	}
 	return b.String()
+}
+
+// humanInt rounds large integers down to a short M / B / K form for KPI
+// pills where space is tight. Examples:
+//
+//	102868111  -> "100M+"
+//	  1543000  -> "1.5M+"
+//	      900  -> "900"
+//
+func humanInt(n int64) string {
+	return humanFloat(float64(n))
+}
+
+// humanFloat does the same for float values (e.g. FIL amounts).
+func humanFloat(n float64) string {
+	abs := n
+	if abs < 0 {
+		abs = -abs
+	}
+	switch {
+	case abs >= 1e9:
+		return fmt.Sprintf("%.0fB+", math.Floor(n/1e9))
+	case abs >= 1e8:
+		return fmt.Sprintf("%.0fM+", math.Floor(n/1e6/100)*100)
+	case abs >= 1e7:
+		return fmt.Sprintf("%.0fM+", math.Floor(n/1e6/10)*10)
+	case abs >= 1e6:
+		return fmt.Sprintf("%.1fM+", math.Floor(n/1e5)/10)
+	case abs >= 1e3:
+		return fmt.Sprintf("%.0fK+", math.Floor(n/1e3))
+	default:
+		return fmt.Sprintf("%.0f", n)
+	}
 }
 
 // commaInt formats an int64 with thousands separators (e.g. 1,234,567).
