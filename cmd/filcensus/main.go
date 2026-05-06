@@ -19,15 +19,23 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/Reiers/sp-radar/internal/foc"
+	"github.com/Reiers/sp-radar/internal/geoip"
+	"github.com/Reiers/sp-radar/internal/probe"
 	"github.com/Reiers/sp-radar/internal/scanner"
 	"github.com/Reiers/sp-radar/internal/snapshot"
+	"github.com/Reiers/sp-radar/internal/spscan"
 	"github.com/urfave/cli/v2"
 )
 
@@ -114,15 +122,37 @@ func runCensus(c *cli.Context) error {
 		snap.Run.PhaseTimes["foc"] = time.Since(t0)
 	}
 
-	// SP and chain-node phases will be wired in follow-up commits as the
-	// runner stabilises. The scaffolding is here so the snapshot file
-	// shape is correct even when those phases are skipped.
+	// --- SP phase ---
 	if !c.Bool("skip-sps") {
-		fmt.Fprintln(os.Stderr, "[sps] not yet wired in cmd/filcensus (legacy cmd/sp-radar still works)")
+		t0 := time.Now()
+		if err := runSPPhase(ctx, c, snap); err != nil {
+			snap.Run.Errors = append(snap.Run.Errors, fmt.Sprintf("sps: %v", err))
+			fmt.Fprintf(os.Stderr, "[sps] error: %v (continuing)\n", err)
+		}
+		snap.Run.PhaseTimes["sps"] = time.Since(t0)
 	}
+
+	// --- Chain-node crawl phase (placeholder; real wiring lands next) ---
 	if !c.Bool("skip-chain-nodes") {
-		fmt.Fprintln(os.Stderr, "[chain-nodes] not yet wired in cmd/filcensus")
+		fmt.Fprintln(os.Stderr, "[chain-nodes] not yet wired (lands in next commit)")
 	}
+
+	// --- HTTP probes against FoC serviceURLs ---
+	if !c.Bool("skip-foc") && len(snap.FoCNodes) > 0 {
+		t0 := time.Now()
+		probeFoCHTTP(ctx, snap, 16)
+		snap.Run.PhaseTimes["foc-http"] = time.Since(t0)
+	}
+
+	// --- GeoIP enrichment (best effort; no-op if no MMDB configured) ---
+	t0 := time.Now()
+	if err := runGeoIPPhase(ctx, snap); err != nil {
+		snap.Run.Errors = append(snap.Run.Errors, fmt.Sprintf("geoip: %v", err))
+		fmt.Fprintf(os.Stderr, "[geoip] error: %v (continuing)\n", err)
+	}
+	snap.Run.PhaseTimes["geoip"] = time.Since(t0)
+
+	computeAggregates(snap)
 
 	// --- Finish ---
 	snap.Run.FinishedAt = time.Now().UTC()
@@ -133,10 +163,230 @@ func runCensus(c *cli.Context) error {
 		return fmt.Errorf("write snapshot: %w", err)
 	}
 	fmt.Printf("Wrote %s\n", out)
+	fmt.Printf("  SPs:           %d total, %d reachable\n",
+		snap.Aggregates.SPsTotal, snap.Aggregates.SPsReachable)
 	fmt.Printf("  FoC providers: %d (%d active, %d reachable)\n",
 		snap.Aggregates.FoCNodesTotal, snap.Aggregates.FoCNodesActive, snap.Aggregates.FoCNodesReachable)
-	fmt.Printf("  Duration: %s\n", snap.Run.Duration)
+	fmt.Printf("  Duration:      %s\n", snap.Run.Duration)
 	return nil
+}
+
+// runSPPhase enumerates and probes the SP fleet.
+func runSPPhase(ctx context.Context, c *cli.Context, snap *snapshot.Snapshot) error {
+	fmt.Fprintln(os.Stderr, "[sps] enumerating storage providers...")
+	var lastPhase string
+	records, err := spscan.Run(ctx, spscan.Options{
+		APIInfo:          c.String("api"),
+		Concurrency:      c.Int("concurrency"),
+		LotusConcurrency: c.Int("lotus-concurrency"),
+		MaxProviders:     c.Int("max-sps"),
+		Timeout:          c.Duration("timeout"),
+		OnProgress: func(phase string, done, total int64) {
+			if phase != lastPhase {
+				lastPhase = phase
+				fmt.Fprintf(os.Stderr, "[sps] phase=%s\n", phase)
+			}
+			fmt.Fprintf(os.Stderr, "[sps] %s %d/%d\n", phase, done, total)
+		},
+	})
+	if err != nil {
+		return err
+	}
+	snap.SPs = records
+	return nil
+}
+
+// probeFoCHTTP runs an HTTP /pdp/ping probe against each FoC serviceURL,
+// updating each row in place.
+func probeFoCHTTP(ctx context.Context, snap *snapshot.Snapshot, concurrency int) {
+	client := &http.Client{Timeout: 8 * time.Second}
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	for i := range snap.FoCNodes {
+		if snap.FoCNodes[i].ServiceURL == "" {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			res := probe.PingFoCService(ctx, client, snap.FoCNodes[idx].ServiceURL)
+			snap.FoCNodes[idx].HTTPReachable = res.Reachable
+			snap.FoCNodes[idx].HTTPStatusCode = res.StatusCode
+			snap.FoCNodes[idx].HTTPServerHeader = res.ServerHeader
+			if res.Err != "" {
+				snap.FoCNodes[idx].HTTPError = res.Err
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+
+// runGeoIPPhase resolves serviceURL hostnames + SP IPs and looks them up via
+// MaxMind GeoLite2 if MAXMIND_CITY_DB / MAXMIND_ASN_DB are configured.
+func runGeoIPPhase(ctx context.Context, snap *snapshot.Snapshot) error {
+	mm, err := geoip.NewMaxMindFromEnv()
+	if err != nil {
+		return err
+	}
+	if mm == nil {
+		fmt.Fprintln(os.Stderr, "[geoip] MAXMIND_CITY_DB / MAXMIND_ASN_DB not set; skipping enrichment")
+		return nil
+	}
+	defer mm.Close()
+	cache := geoip.NewCache(mm)
+
+	// Enrich SPs
+	for i := range snap.SPs {
+		for _, ip := range snap.SPs[i].IPs {
+			r, err := cache.Lookup(ctx, ip)
+			if err != nil || r == nil {
+				continue
+			}
+			snap.SPs[i].GeoIP = append(snap.SPs[i].GeoIP, snapshot.GeoRow{
+				IP:          r.IP,
+				Country:     r.Country,
+				CountryCode: r.CountryCode,
+				Region:      r.Region,
+				City:        r.City,
+				ASN:         r.ASN,
+				ASNOrg:      r.ASNOrg,
+			})
+		}
+	}
+
+	// Enrich FoC nodes by resolving serviceURL hostname → IPs first.
+	for i := range snap.FoCNodes {
+		host := probe.HostnameOf(snap.FoCNodes[i].ServiceURL)
+		if host == "" {
+			continue
+		}
+		ips := resolveHost(ctx, host)
+		snap.FoCNodes[i].ResolvedIPs = ips
+		for _, ip := range ips {
+			r, err := cache.Lookup(ctx, ip)
+			if err != nil || r == nil {
+				continue
+			}
+			snap.FoCNodes[i].GeoIP = append(snap.FoCNodes[i].GeoIP, snapshot.GeoRow{
+				IP:          r.IP,
+				Country:     r.Country,
+				CountryCode: r.CountryCode,
+				Region:      r.Region,
+				City:        r.City,
+				ASN:         r.ASN,
+				ASNOrg:      r.ASNOrg,
+			})
+		}
+		snap.FoCNodes[i].LocationMatch = compareLocations(snap.FoCNodes[i].DeclaredLocation, snap.FoCNodes[i].GeoIP)
+	}
+
+	return nil
+}
+
+func resolveHost(ctx context.Context, host string) []string {
+	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res := &net.Resolver{}
+	addrs, err := res.LookupIPAddr(rctx, host)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, a := range addrs {
+		s := a.IP.String()
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// compareLocations does a coarse declared-vs-resolved location match.
+// declared looks like "C=US;ST=California;L=Chino". geo provides ISO codes.
+// We say "match" if any resolved CountryCode matches the declared C= field,
+// "mismatch" if at least one resolved code disagrees, else "unknown".
+func compareLocations(declared string, geo []snapshot.GeoRow) string {
+	if declared == "" || len(geo) == 0 {
+		return "unknown"
+	}
+	var declaredCC string
+	for _, kv := range strings.Split(declared, ";") {
+		kv = strings.TrimSpace(kv)
+		if strings.HasPrefix(strings.ToUpper(kv), "C=") {
+			declaredCC = strings.ToUpper(strings.TrimPrefix(kv, "C="))
+			declaredCC = strings.ToUpper(strings.TrimPrefix(declaredCC, "c="))
+			break
+		}
+	}
+	if declaredCC == "" {
+		return "unknown"
+	}
+	match := false
+	mismatch := false
+	for _, g := range geo {
+		if g.CountryCode == "" {
+			continue
+		}
+		if strings.EqualFold(g.CountryCode, declaredCC) {
+			match = true
+		} else {
+			mismatch = true
+		}
+	}
+	switch {
+	case match && !mismatch:
+		return "match"
+	case mismatch && !match:
+		return "mismatch"
+	case match && mismatch:
+		return "partial"
+	}
+	return "unknown"
+}
+
+// computeAggregates fills snap.Aggregates from the per-record collections.
+func computeAggregates(snap *snapshot.Snapshot) {
+	ag := &snap.Aggregates
+	ag.SPsTotal = len(snap.SPs)
+	for _, sp := range snap.SPs {
+		if sp.Reachable {
+			ag.SPsReachable++
+		}
+		if sp.Software != "" {
+			ag.SPsBySoftware[sp.Software]++
+		} else {
+			ag.SPsBySoftware["unknown"]++
+		}
+		for _, g := range sp.GeoIP {
+			if g.CountryCode != "" {
+				ag.SPsByCountry[g.CountryCode]++
+			}
+			if g.ASN != 0 {
+				ag.SPsByASN[fmt.Sprintf("AS%d", g.ASN)]++
+			}
+		}
+	}
+	ag.ChainNodesTotal = len(snap.ChainNodes)
+	for _, cn := range snap.ChainNodes {
+		if cn.Software != "" {
+			ag.ChainNodesBySW[cn.Software]++
+		}
+	}
+	ag.FoCNodesTotal = len(snap.FoCNodes)
+	for _, f := range snap.FoCNodes {
+		if f.Active {
+			ag.FoCNodesActive++
+		}
+		if f.HTTPReachable {
+			ag.FoCNodesReachable++
+		}
+	}
+	// Sorted variants are not on the struct (the renderer can sort the maps)
+	_ = sort.Strings
 }
 
 func runFoCPhase(ctx context.Context, rpc *scanner.LotusRPC, network foc.Network, snap *snapshot.Snapshot) error {
@@ -194,10 +444,9 @@ func runFoCPhase(ctx context.Context, rpc *scanner.LotusRPC, network foc.Network
 		row.PaymentTokenAddress = p.PDP.PaymentTokenAddress
 
 		snap.FoCNodes = append(snap.FoCNodes, row)
-		snap.Aggregates.FoCNodesTotal++
-		if p.Active {
-			snap.Aggregates.FoCNodesActive++
-		}
+		// Don't increment Aggregates here — computeAggregates() handles
+		// the final pass after all phases populate snap.FoCNodes.
+
 		if i%10 == 0 || i == len(ids)-1 {
 			fmt.Fprintf(os.Stderr, "[foc] %d/%d %s (%s)\n", i+1, len(ids), p.Name, p.PDP.ServiceURL)
 		}
