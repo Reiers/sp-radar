@@ -309,58 +309,48 @@ func parseBigToFloat(s string) float64 {
 }
 
 // SentimentMeterArc returns the SVG path for the *filled* portion of the
-// gauge (the dark gradient segment from the left edge up to the score
-// position). Score is 0..100. Background arc is rendered separately by
-// the template.
+// gauge (the gradient arc from the left edge up to the score position).
+// Score is 0..100. The background full arc is rendered separately by the
+// template.
 //
-// The gauge is a 180° arc on a 200×120 viewbox: cx=100, cy=110, r=85,
-// running from angle π (left side) clockwise to 0 (right side).
-func SentimentMeterArc(score float64) string {
+// Geometry: half-circle on a 200×144 viewbox.
+//
+//   cx, cy = (100, 110), r = 85
+//   left  edge of arc:   (15,  110)  — angle = π
+//   top   of arc:        (100, 25)   — angle = 3π/2 (= -π/2)
+//   right edge of arc:   (185, 110)  — angle = 2π   (= 0)
+//
+// SVG y grows downward, so to land on the upper semicircle the angle
+// must produce a negative sin(angle). We sweep from π → 2π (clockwise
+// visually, A-arc sweep-flag=1).
+func sentimentAngle(score float64) float64 {
 	if score < 0 {
 		score = 0
 	}
 	if score > 100 {
 		score = 100
 	}
-	startAngle := math.Pi
-	endAngle := math.Pi - (score/100)*math.Pi
+	return math.Pi + (score/100)*math.Pi
+}
+
+func SentimentMeterArc(score float64) string {
 	cx, cy, r := 100.0, 110.0, 85.0
-	x1 := cx + r*math.Cos(startAngle)
-	y1 := cy + r*math.Sin(startAngle)
-	x2 := cx + r*math.Cos(endAngle)
-	y2 := cy + r*math.Sin(endAngle)
-	// large-arc-flag = 0 since we're <= 180°. sweep-flag = 0 (counterclockwise
-	// in SVG's y-down coordinate system, which corresponds to clockwise visually
-	// because we picked endAngle below startAngle).
-	largeArc := 0
-	if score > 50 {
-		// still <= 180 deg total, but SVG counts large-arc as > 180 of the swept arc
-	}
-	_ = largeArc
+	start := math.Pi
+	end := sentimentAngle(score)
+	x1 := cx + r*math.Cos(start)
+	y1 := cy + r*math.Sin(start)
+	x2 := cx + r*math.Cos(end)
+	y2 := cy + r*math.Sin(end)
+	// large-arc-flag: 0 because span is always ≤ 180° (we go from π to at most 2π).
+	// sweep-flag = 1 (positive-angle direction, which is the upper half here).
 	return fmt.Sprintf("M %.2f %.2f A %.2f %.2f 0 0 1 %.2f %.2f", x1, y1, r, r, x2, y2)
 }
 
-// SentimentMeterTickX returns the X coordinate of the indicator tick on the
-// gauge for a given score (0..100). Y is fixed at the bottom of the arc.
+// SentimentMeterTickX / Y position the indicator dot on the arc at the
+// given score (0..100). Same geometry as the arc.
 func SentimentMeterTickX(score float64) float64 {
-	if score < 0 {
-		score = 0
-	}
-	if score > 100 {
-		score = 100
-	}
-	angle := math.Pi - (score/100)*math.Pi
-	return 100 + 85*math.Cos(angle)
+	return 100 + 85*math.Cos(sentimentAngle(score))
 }
-
-// SentimentMeterTickY returns the Y coordinate of the indicator tick.
 func SentimentMeterTickY(score float64) float64 {
-	if score < 0 {
-		score = 0
-	}
-	if score > 100 {
-		score = 100
-	}
-	angle := math.Pi - (score/100)*math.Pi
-	return 110 + 85*math.Sin(angle)
+	return 110 + 85*math.Sin(sentimentAngle(score))
 }
