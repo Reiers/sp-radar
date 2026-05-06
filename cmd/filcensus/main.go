@@ -143,6 +143,8 @@ func runCensus(c *cli.Context) error {
 				NextDealID:             res.NextDealID,
 				NextAllocationID:       res.NextAllocationID,
 				VerifiedRootKey:        res.VerifiedRootKey,
+				LowestActiveDealID:     res.LowestActiveDealID,
+				ActiveDealsApprox:      res.ActiveDealsApprox,
 				RawPiB:                 res.RawPiB(),
 				QAPiB:                  res.QAPiB(),
 				VerifiedRawPiBEstimate: res.VerifiedRawPiBEstimate(),
@@ -151,8 +153,8 @@ func runCensus(c *cli.Context) error {
 				MarketLockedFIL:        res.MarketLockedFIL(),
 			}
 			snap.ChainHead.Height = res.HeadEpoch
-			fmt.Fprintf(os.Stderr, "[network-truth] head=%d raw=%.0f PiB QA=%.0f PiB miners=%d pledge=%.0f FIL deals=%d\n",
-				res.HeadEpoch, res.RawPiB(), res.QAPiB(), res.MinerAboveMinPowerCount, res.PledgeFIL(), res.NextDealID)
+			fmt.Fprintf(os.Stderr, "[network-truth] head=%d raw=%.0f PiB QA=%.0f PiB miners=%d pledge=%.0f FIL deals=lifetime=%d active=%d\n",
+				res.HeadEpoch, res.RawPiB(), res.QAPiB(), res.MinerAboveMinPowerCount, res.PledgeFIL(), res.NextDealID, res.ActiveDealsApprox)
 		}
 		snap.Run.PhaseTimes["network-truth"] = time.Since(t0)
 	}

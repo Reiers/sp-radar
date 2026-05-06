@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/Reiers/sp-radar/internal/scanner"
 )
@@ -41,6 +42,15 @@ type Result struct {
 	// f06 (VerifiedRegistry) fields
 	NextAllocationID  int64    // total DataCap allocations ever issued
 	VerifiedRootKey   string   // governance root multisig (currently f080)
+
+	// Active-deal estimate: f05.States is a HAMT pruned of expired deals,
+	// so the lowest still-queryable deal ID is the lower bound of the
+	// sliding active window. (NextDealID - LowestActiveDealID) is then a
+	// reasonable approximation of the active deal count (slightly over-
+	// counts because slashed/terminated deals are still in the window for
+	// a while). Computed via binary search — ~30-40 RPC calls.
+	LowestActiveDealID  int64
+	ActiveDealsApprox   int64
 }
 
 // Fetch reads the three system actors and returns a populated Result.
@@ -102,7 +112,57 @@ func Fetch(ctx context.Context, rpc *scanner.LotusRPC) (*Result, error) {
 		}
 	}
 
+	// Active-deal sliding window: binary search on StateMarketStorageDeal.
+	// Cheap relative to the rest of the run.
+	if res.NextDealID > 0 {
+		lo, ok := findLowestActiveDealID(ctx, rpc, res.NextDealID)
+		if ok {
+			res.LowestActiveDealID = lo
+			res.ActiveDealsApprox = res.NextDealID - lo
+		}
+	}
+
 	return res, firstErr
+}
+
+// findLowestActiveDealID binary-searches for the lowest deal ID that
+// StateMarketStorageDeal still returns successfully. Deals below this point
+// have been GC'd from f05.States. Returns the lower bound + ok flag.
+//
+// This is approximate: some deal IDs in the active range may have been
+// individually slashed or expired and removed early. But the network always
+// keeps deals around until at least the SectorExpiration, so the active
+// window is roughly contiguous and the lower bound is meaningful.
+func findLowestActiveDealID(ctx context.Context, rpc *scanner.LotusRPC, nextDealID int64) (int64, bool) {
+	// Sanity: confirm the most recent deal is queryable. If even that fails,
+	// something else is wrong and we bail.
+	mostRecent := nextDealID - 1
+	if !dealQueryable(ctx, rpc, mostRecent) {
+		return 0, false
+	}
+	// Binary search across [1, nextDealID-1].
+	lo, hi := int64(1), mostRecent
+	// Find any active ID first by stepping back from the head if needed.
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if dealQueryable(ctx, rpc, mid) {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	return lo, true
+}
+
+func dealQueryable(ctx context.Context, rpc *scanner.LotusRPC, dealID int64) bool {
+	// Cap each call at 4s; this lookup pattern is fast on a healthy node.
+	lctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	var dst struct{} // we don't care about the value, only success
+	if err := rpcCall(lctx, rpc, "StateMarketStorageDeal", []interface{}{dealID, nil}, &dst); err != nil {
+		return false
+	}
+	return true
 }
 
 // chainHead returns the current head epoch.

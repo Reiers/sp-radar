@@ -38,17 +38,26 @@ type SoftwareEntry struct {
 }
 
 // softwareLogos maps detect.Software string identifiers → logo basename.
-// Keep in sync with the files in web/assets/logos/.
+// Keep in sync with the files in internal/render/assets/logos/.
+//
+// Real upstream marks for the four major projects (Lotus, Curio, Boost,
+// Venus) come from the project repos / press kits, copied from
+// ~/Desktop/Logos and used under fair-use citation. Smaller fallback marks
+// are unique monograms generated below — each gets its own colour so the
+// distribution rows visually separate.
 var softwareLogos = map[string]string{
 	"lotus":       "lotus.svg",
 	"forest":      "forest.png",
-	"venus":       "venus.svg",
+	"venus":       "venus.png",
 	"curio":       "curio.svg",
-	"boost":       "boost.svg",
+	"boost":       "boost.png",
 	"lotus-miner": "lotus-miner.svg",
 	"venus-miner": "venus-miner.svg",
 	"droplet":     "droplet.svg",
 	"markets":     "markets.svg",
+	"private":     "private.svg",
+	"no-peer-id":  "no-peer-id.svg",
+	"other":       "other.svg",
 	"unknown":     "unknown.svg",
 }
 
@@ -83,6 +92,11 @@ type PageData struct {
 	*snapshot.Snapshot
 	NarrativeFiftyPctOps  int
 	NarrativeNinetyPctOps int
+
+	// ActiveDealsApprox is hoisted to PageData so the template can use it
+	// directly without nil-checking NetworkTruth (which the snapshot may
+	// or may not have).
+	ActiveDealsApprox int64
 }
 
 // buildPageData computes the derived narrative fields.
@@ -90,6 +104,9 @@ func buildPageData(s *snapshot.Snapshot) *PageData {
 	pd := &PageData{Snapshot: s}
 	pd.NarrativeFiftyPctOps = opsForPowerThreshold(s.Operators, 0.50)
 	pd.NarrativeNinetyPctOps = opsForPowerThreshold(s.Operators, 0.90)
+	if s.NetworkTruth != nil {
+		pd.ActiveDealsApprox = s.NetworkTruth.ActiveDealsApprox
+	}
 	return pd
 }
 
@@ -145,6 +162,9 @@ func Render(snap *snapshot.Snapshot, outDir string) error {
 		"topNStrings":       topNStrings,
 		"commaInt":          commaInt,
 		"commaFloat":        commaFloat,
+		"powerHumanPiB":     powerHumanPiB,    // smart PiB / EiB switch
+		"opOwnerLabel":      opOwnerLabel,     // "4 owners (f01...)" or just one
+		"lorenzPath":        lorenzPath,       // SVG path d= for cumulative power chart
 	}
 	tpl, err := template.New("index").Funcs(funcs).Parse(string(tplBytes))
 	if err != nil {
@@ -206,6 +226,70 @@ func powerPctOfNetwork(rowPower string, all []snapshot.Operator) string {
 	den := new(big.Float).SetInt(total)
 	pct, _ := new(big.Float).Quo(new(big.Float).Mul(num, big.NewFloat(100)), den).Float64()
 	return fmt.Sprintf("%.2f%%", pct)
+}
+
+// powerHumanPiB formats a raw-bytes value as PiB or EiB depending on size.
+// Threshold is 1024 PiB (= 1 EiB). Returns a 2-element string slice
+// (val, unit) — Go templates can't multi-return non-error values, so we
+// pack it in a slice and the template uses {{index $v 0}} / {{index $v 1}}.
+func powerHumanPiB(piB float64) []string {
+	if piB >= 1024 {
+		return []string{fmt.Sprintf("%.1f", piB/1024), "EiB"}
+	}
+	return []string{commaFloat(piB, 0), "PiB"}
+}
+
+// opOwnerLabel returns a short description of the operator's owner addresses.
+// One owner → the address. Multiple → "<first> +N more".
+func opOwnerLabel(ops []string) string {
+	switch len(ops) {
+	case 0:
+		return "—"
+	case 1:
+		return ops[0]
+	case 2:
+		return ops[0] + ", " + ops[1]
+	default:
+		return fmt.Sprintf("%s +%d more", ops[0], len(ops)-1)
+	}
+}
+
+// lorenzPath produces an SVG path d= attribute for a cumulative-power
+// (Lorenz-style) curve on a 1000×400 viewbox. X axis = operators sorted
+// descending by power, Y axis = cumulative share of network power.
+// We start at (0,400) and end at (1000, 0) (full coverage), with the
+// curve hugging the upper-left for high concentration.
+func lorenzPath(ops []snapshot.Operator) string {
+	if len(ops) == 0 {
+		return ""
+	}
+	total := new(big.Int)
+	powers := make([]*big.Int, 0, len(ops))
+	for _, op := range ops {
+		x, ok := new(big.Int).SetString(op.RawBytePower, 10)
+		if !ok || x == nil {
+			x = new(big.Int)
+		}
+		powers = append(powers, x)
+		total.Add(total, x)
+	}
+	if total.Sign() == 0 {
+		return ""
+	}
+	totalF := new(big.Float).SetInt(total)
+	n := len(ops)
+	var b strings.Builder
+	b.WriteString("M 0 400")
+	cum := new(big.Int)
+	for i, p := range powers {
+		cum.Add(cum, p)
+		x := float64(i+1) * (1000.0 / float64(n))
+		cumF := new(big.Float).SetInt(cum)
+		share, _ := new(big.Float).Quo(cumF, totalF).Float64()
+		y := 400 - share*400
+		b.WriteString(fmt.Sprintf(" L %.1f %.1f", x, y))
+	}
+	return b.String()
 }
 
 // commaInt formats an int64 with thousands separators (e.g. 1,234,567).

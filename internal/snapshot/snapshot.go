@@ -182,6 +182,15 @@ type NetworkTruth struct {
 	NextAllocationID       int64  `json:"next_allocation_id"`
 	VerifiedRootKey        string `json:"verified_root_key"`
 
+	// Approximate active deal count, computed by binary-searching the lowest
+	// queryable deal ID in f05.States. Old deals are GC'd from State once
+	// they expire, so (NextDealID - LowestActiveDealID) is the size of the
+	// active sliding window. The methodology is conservative — some deals in
+	// the range may be slashed/terminated rather than active. We label as
+	// "approx" in the dashboard for honesty.
+	LowestActiveDealID     int64 `json:"lowest_active_deal_id"`
+	ActiveDealsApprox      int64 `json:"active_deals_approx"`
+
 	// Pre-computed pretty values for templates (avoid bigint maths in HTML).
 	RawPiB                 float64 `json:"raw_pib"`
 	QAPiB                  float64 `json:"qa_pib"`

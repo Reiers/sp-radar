@@ -54,13 +54,10 @@ a:hover { text-decoration: underline; }
   flex-wrap: wrap;
 }
 .brand { display: flex; align-items: center; gap: 0.5rem; }
-.brand-mark {
-  display: inline-flex; align-items: center; justify-content: center;
+.brand-mark-img {
+  display: block;
   width: 28px; height: 28px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
   border-radius: 7px;
-  color: white; font-weight: 800; font-size: 16px;
-  letter-spacing: -0.05em;
 }
 .brand-name {
   font-weight: 700; letter-spacing: -0.03em;
@@ -255,11 +252,30 @@ main {
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 .dist-row:hover { border-color: var(--border-2); background: var(--bg-elev2); }
+/* Distribution-row logo tiles: uniform 32x32, white-ish background so
+   heterogeneous PNG/SVG marks (Lotus mark vs Curio mark vs Boost PNG vs
+   Venus PNG) sit consistently against the dark theme. */
 .dist-logo {
-  display: block;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.04);
+  width: 32px; height: 32px;
+  padding: 4px;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 7px;
   object-fit: contain;
+}
+/* For our own monogram fallbacks the dark interior already contains
+   contrast — turn off the white wash so they pop. */
+.dist-row.sw-private  .dist-logo,
+.dist-row.sw-no-peer-id .dist-logo,
+.dist-row.sw-other    .dist-logo,
+.dist-row.sw-unknown  .dist-logo,
+.dist-row.sw-droplet  .dist-logo,
+.dist-row.sw-markets  .dist-logo,
+.dist-row.sw-lotus-miner .dist-logo,
+.dist-row.sw-venus-miner .dist-logo {
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
 }
 .dist-name {
   font-weight: 600;
@@ -299,6 +315,57 @@ main {
 .sw-other    .dist-bar > span,
 .sw-unknown  .dist-bar > span {
   background: linear-gradient(90deg, #4b5567, #6f7989);
+}
+
+/* --- charts --- */
+.chart {
+  margin: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem 1rem;
+}
+svg.lorenz {
+  display: block;
+  width: 100%;
+  height: 280px;
+  overflow: visible;
+}
+svg.lorenz .grid line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+svg.lorenz .threshold {
+  stroke: rgba(92,184,255,0.4);
+  stroke-width: 1;
+}
+svg.lorenz .lorenz-line {
+  fill: none;
+  stroke: url(#lorenz-grad);
+  stroke: #5cb8ff;
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+svg.lorenz .lorenz-fill {
+  fill: rgba(92,184,255,0.08);
+  stroke: none;
+}
+.chart-caption {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.85rem;
+  font-size: 0.8rem;
+  color: var(--text-2);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.chart-caption .chart-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  vertical-align: middle;
 }
 
 /* --- tables --- */

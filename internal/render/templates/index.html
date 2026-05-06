@@ -6,14 +6,14 @@
 <title>Filecoin Network Census · {{.Network}} · {{.GeneratedAt.Format "2006-01-02"}}</title>
 <meta name="description" content="A measured, public snapshot of who actually runs the Filecoin network. Operators, software versions, geography, FoC providers.">
 <link rel="stylesheet" href="assets/css/site.css">
-<link rel="icon" type="image/svg+xml" href="assets/logos/filecoin-mark.svg">
+<link rel="icon" type="image/svg+xml" href="assets/logos/filcensus-mark.svg">
 </head>
 <body>
 
 <header class="site-header">
   <div class="header-inner">
     <div class="brand">
-      <span class="brand-mark">⌂</span>
+      <img class="brand-mark-img" src="assets/logos/filcensus-mark.svg" alt="" width="28" height="28">
       <span class="brand-name">filcensus</span>
     </div>
     <nav class="header-nav">
@@ -55,25 +55,36 @@
   <h2 class="section-title">Network truth · chain epoch {{.NetworkTruth.HeadEpoch}}</h2>
   <div class="truth-grid">
     <div class="truth-cell">
-      <div class="truth-num">{{printf "%.0f" .NetworkTruth.RawPiB}}<span class="truth-unit">PiB</span></div>
+      {{$v := powerHumanPiB .NetworkTruth.RawPiB}}
+      <div class="truth-num">{{index $v 0}}<span class="truth-unit">{{index $v 1}}</span></div>
       <div class="truth-label">Raw byte power</div>
       <div class="truth-sub">All sealed sectors, network-wide</div>
     </div>
     <div class="truth-cell">
-      <div class="truth-num">{{printf "%.0f" .NetworkTruth.QAPiB}}<span class="truth-unit">PiB</span></div>
+      {{$v := powerHumanPiB .NetworkTruth.QAPiB}}
+      <div class="truth-num">{{index $v 0}}<span class="truth-unit">{{index $v 1}}</span></div>
       <div class="truth-label">Quality-adjusted</div>
       <div class="truth-sub">Verified deals get 10× weight</div>
     </div>
     <div class="truth-cell">
-      <div class="truth-num">{{printf "%.0f" .NetworkTruth.VerifiedRawPiBEstimate}}<span class="truth-unit">PiB</span></div>
+      {{$v := powerHumanPiB .NetworkTruth.VerifiedRawPiBEstimate}}
+      <div class="truth-num">{{index $v 0}}<span class="truth-unit">{{index $v 1}}</span></div>
       <div class="truth-label">Verified-deal data <em>(est.)</em></div>
       <div class="truth-sub">From (QA - raw) / 9</div>
     </div>
+    {{if .ActiveDealsApprox}}
+    <div class="truth-cell">
+      <div class="truth-num">{{commaInt .ActiveDealsApprox}}</div>
+      <div class="truth-label">Active deals <em>(est.)</em></div>
+      <div class="truth-sub">Sliding window from f05.States; recent boundary sampled</div>
+    </div>
+    {{else}}
     <div class="truth-cell">
       <div class="truth-num">{{commaInt .NetworkTruth.NextDealID}}</div>
-      <div class="truth-label">Total deals on chain</div>
-      <div class="truth-sub">Lifetime; active set is a sliding window</div>
+      <div class="truth-label">Lifetime deals on chain</div>
+      <div class="truth-sub">High-watermark; older deals are GC'd</div>
     </div>
+    {{end}}
     <div class="truth-cell">
       <div class="truth-num">{{commaInt .NetworkTruth.NextAllocationID}}</div>
       <div class="truth-label">DataCap allocations</div>
@@ -122,11 +133,44 @@
   </div>
 </section>
 
+<!-- ======================== POWER CONCENTRATION (Lorenz) ======================== -->
+<section id="concentration" class="section">
+  <div class="section-header">
+    <h2>Power concentration</h2>
+    <p class="section-lead">Cumulative share of network raw power as you walk down the operator list ranked by power. The faster the curve hits the top of the chart, the more concentrated the network.</p>
+  </div>
+  {{if .Operators}}
+  <figure class="chart">
+    <svg viewBox="0 0 1000 400" preserveAspectRatio="none" class="lorenz" role="img" aria-label="Cumulative power share by operator rank">
+      <!-- background grid -->
+      <g class="grid">
+        <line x1="0" y1="0"   x2="1000" y2="0"   />
+        <line x1="0" y1="100" x2="1000" y2="100" />
+        <line x1="0" y1="200" x2="1000" y2="200" />
+        <line x1="0" y1="300" x2="1000" y2="300" />
+        <line x1="0" y1="400" x2="1000" y2="400" />
+      </g>
+      <!-- 50% line -->
+      <line class="threshold" x1="0" y1="200" x2="1000" y2="200" stroke-dasharray="4 4"/>
+      <!-- 90% line -->
+      <line class="threshold" x1="0" y1="40"  x2="1000" y2="40"  stroke-dasharray="4 4"/>
+      <!-- the curve -->
+      <path class="lorenz-fill" d="{{lorenzPath .Operators}} L 1000 400 Z"/>
+      <path class="lorenz-line" d="{{lorenzPath .Operators}}"/>
+    </svg>
+    <figcaption class="chart-caption">
+      <span><span class="chart-dot" style="background:var(--accent)"></span>Cumulative power share</span>
+      <span class="dim">{{.NarrativeFiftyPctOps}} ops → 50% · {{.NarrativeNinetyPctOps}} ops → 90% · {{len .Operators}} ops total</span>
+    </figcaption>
+  </figure>
+  {{end}}
+</section>
+
 <!-- ======================== OPERATORS ======================== -->
 <section id="operators" class="section">
   <div class="section-header">
     <h2>Operators by power</h2>
-    <p class="section-lead">Top 30 deduplicated operators ranked by raw byte power. Reachability column shows how many of the operator's miner IDs accept libp2p dials from us right now.</p>
+    <p class="section-lead">Top 30 deduplicated operators ranked by raw byte power. Owner addresses are the on-chain identity — a single operator typically appears multiple times in the network as separate miner IDs sharing the same owner / worker / control / beneficiary addresses.</p>
   </div>
   {{if .Operators}}
   <div class="table-scroll">
@@ -134,24 +178,24 @@
       <thead>
         <tr>
           <th class="rank">#</th>
-          <th>Operator</th>
+          <th>Owner(s)</th>
+          <th>Representative</th>
           <th class="num">Miner IDs</th>
-          <th class="num">Power (PiB)</th>
+          <th class="num">Raw power</th>
           <th class="num">% net</th>
           <th class="num">Reachable</th>
-          <th>Top owners</th>
         </tr>
       </thead>
       <tbody>
         {{range $i, $op := topOperators .Operators 30}}
         <tr>
           <td class="rank">{{add $i 1}}</td>
-          <td class="mono">{{$op.Representative}}</td>
+          <td class="mono">{{opOwnerLabel $op.Owners}}</td>
+          <td class="mono dim">{{$op.Representative}}</td>
           <td class="num">{{len $op.Members}}</td>
-          <td class="num">{{powerPiB $op.RawBytePower}}</td>
+          <td class="num">{{powerPiB $op.RawBytePower}}<span class="dim"> PiB</span></td>
           <td class="num">{{powerPctOfNetwork $op.RawBytePower $.Operators}}</td>
           <td class="num reach">{{$op.ReachableMembers}}<span class="dim">/{{len $op.Members}}</span></td>
-          <td class="mono dim">{{topNStrings $op.Owners 2}}</td>
         </tr>
         {{end}}
       </tbody>
