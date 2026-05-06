@@ -107,6 +107,23 @@ type MinerInfoResult struct {
 	Multiaddrs [][]byte
 }
 
+// EthCall executes a read-only EVM call against `to` with the given data
+// (0x-prefixed hex). Returns the raw return data hex-encoded with 0x prefix.
+//
+// This implements foc.EthCaller. Filecoin.EthCall expects a tx-like object
+// plus a block param; we use "latest".
+func (r *LotusRPC) EthCall(ctx context.Context, to string, dataHex string) (string, error) {
+	tx := map[string]string{
+		"to":   to,
+		"data": dataHex,
+	}
+	var out string
+	if err := r.call(ctx, "EthCall", []interface{}{tx, "latest"}, &out); err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
 func (r *LotusRPC) StateMinerInfo(ctx context.Context, maddr string) (*MinerInfoResult, error) {
 	var raw struct {
 		PeerId     string   `json:"PeerId"`
