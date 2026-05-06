@@ -52,6 +52,7 @@ func main() {
 		Commands: []*cli.Command{
 			censusCmd,
 			enrichCmd,
+			pushCmd,
 			focCountCmd,
 		},
 	}

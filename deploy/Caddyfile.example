@@ -1,0 +1,79 @@
+# /etc/caddy/Caddyfile.d/filcensus.caddy
+#
+# Caddy config for filcensus.reiers.io. Two hostnames:
+#
+#   filcensus.reiers.io          — public read-only static dashboard
+#   ingest.filcensus.reiers.io   — push endpoint (Bearer-auth required)
+#
+# Cloudflare is in front; we still terminate TLS at Caddy via Cloudflare's
+# Origin CA cert (or Let's Encrypt with HTTP-01 if Cloudflare is in DNS-only
+# / proxy=off mode).
+
+filcensus.reiers.io {
+    # Static dashboard — published files only. No upload, no auth.
+    root * /var/lib/filcensus/site
+    file_server
+    encode gzip zstd
+
+    # Snapshot JSON files mirrored under /data/ for power users / scripts.
+    handle_path /data/* {
+        root * /var/lib/filcensus/snapshots
+        file_server
+        header Cache-Control "public, max-age=300"
+    }
+
+    # Conservative caching for the HTML/CSS/JS — short TTL because we
+    # re-render on every push.
+    @assets {
+        path *.css *.js *.png *.svg *.webp *.jpg
+    }
+    header @assets Cache-Control "public, max-age=86400"
+
+    @html path *.html /
+    header @html Cache-Control "public, max-age=300"
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "interest-cohort=()"
+    }
+
+    log {
+        output file /var/log/caddy/filcensus-access.log {
+            roll_size 50mb
+            roll_keep 7
+        }
+        format console
+    }
+}
+
+ingest.filcensus.reiers.io {
+    # Receive pushed snapshots only. Bearer auth handled by filcensusd itself
+    # via the X-Filcensus-* / Authorization headers.
+    reverse_proxy 127.0.0.1:8443 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Hard upload size limit (defense in depth; daemon also caps internally).
+    request_body {
+        max_size 50MB
+    }
+
+    # Restrict source IPs if you know the mainnet node's egress IP.
+    # @push remote_ip 31.169.51.133/32
+    # handle_path /_ingest {
+    #     reverse_proxy @push 127.0.0.1:8443
+    # }
+
+    log {
+        output file /var/log/caddy/filcensus-ingest.log {
+            roll_size 50mb
+            roll_keep 14
+        }
+        format console
+    }
+}

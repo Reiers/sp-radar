@@ -1,0 +1,58 @@
+# /etc/systemd/system/filcensusd.service
+#
+# Receiver daemon for the filcensus dashboard. Listens on localhost,
+# accepts pushed snapshots from the mainnet node, re-renders the static site.
+#
+# Caddy/Cloudflare in front terminates TLS and forwards to localhost.
+
+[Unit]
+Description=filcensus dashboard ingest + render daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=filcensus
+Group=filcensus
+
+# All paths are owned by user `filcensus` (created with `useradd -r`).
+# Token file holds a 64-hex-char random string — generate with
+#   openssl rand -hex 32 > /etc/filcensus/push-token
+#   chmod 600 /etc/filcensus/push-token
+#   chown filcensus:filcensus /etc/filcensus/push-token
+ExecStart=/usr/local/bin/filcensusd \
+  --addr 127.0.0.1:8443 \
+  --snapshots /var/lib/filcensus/snapshots \
+  --site /var/lib/filcensus/site \
+  --token-file /etc/filcensus/push-token
+
+Restart=on-failure
+RestartSec=5s
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Read-write paths
+ReadWritePaths=/var/lib/filcensus
+
+# Network: receive only, no outbound needed
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target
