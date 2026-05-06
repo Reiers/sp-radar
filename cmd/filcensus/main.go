@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/Reiers/sp-radar/internal/chaincrawl"
+	"github.com/Reiers/sp-radar/internal/cluster"
 	"github.com/Reiers/sp-radar/internal/foc"
 	"github.com/Reiers/sp-radar/internal/geoip"
 	"github.com/Reiers/sp-radar/internal/probe"
@@ -167,6 +168,7 @@ func runCensus(c *cli.Context) error {
 		fmt.Fprintln(os.Stderr, "[geoip] skipped (use 'filcensus enrich' or --with-geoip to enrich)")
 	}
 
+	computeOperators(snap)
 	computeAggregates(snap)
 
 	// --- Finish ---
@@ -409,6 +411,50 @@ func compareLocations(declared string, geo []snapshot.GeoRow) string {
 }
 
 // computeAggregates fills snap.Aggregates from the per-record collections.
+// computeOperators runs union-find clustering on the SP records and fills
+// snap.Operators. Mirrors the 2026-Q1 SP census report's grouping logic
+// (shared owner / worker / control / beneficiary / IP, with a CDN cap).
+func computeOperators(snap *snapshot.Snapshot) {
+	ids := make([]cluster.Identity, 0, len(snap.SPs))
+	reachableByID := make(map[string]bool, len(snap.SPs))
+	for _, sp := range snap.SPs {
+		controls := append([]string(nil), sp.ControlAddrs...)
+		ids = append(ids, cluster.Identity{
+			MinerID:         sp.MinerID,
+			Owner:           sp.OwnerAddr,
+			Worker:          sp.WorkerAddr,
+			Control:         controls,
+			Beneficiary:     sp.BeneficiaryAddr,
+			IPs:             append([]string(nil), sp.IPs...),
+			RawBytePower:    sp.RawBytePower,
+			QualityAdjPower: sp.QualityAdjPower,
+		})
+		reachableByID[sp.MinerID] = sp.Reachable
+	}
+	clusters := cluster.Build(ids)
+	snap.Operators = make([]snapshot.Operator, 0, len(clusters))
+	for _, c := range clusters {
+		op := snapshot.Operator{
+			Representative:  c.Representative,
+			Members:         c.Members,
+			Owners:          c.Owners,
+			Workers:         c.Workers,
+			Beneficiaries:   c.Beneficiaries,
+			IPs:             c.IPs,
+			RawBytePower:    c.RawBytePower,
+			QualityAdjPower: c.QualityAdjPower,
+		}
+		for _, m := range c.Members {
+			if reachableByID[m] {
+				op.ReachableMembers++
+			} else {
+				op.UnreachableMembers++
+			}
+		}
+		snap.Operators = append(snap.Operators, op)
+	}
+}
+
 func computeAggregates(snap *snapshot.Snapshot) {
 	ag := &snap.Aggregates
 	ag.SPsTotal = len(snap.SPs)
@@ -444,6 +490,15 @@ func computeAggregates(snap *snapshot.Snapshot) {
 		if f.HTTPReachable {
 			ag.FoCNodesReachable++
 		}
+	}
+	ag.OperatorsTotal = len(snap.Operators)
+	for _, op := range snap.Operators {
+		if op.ReachableMembers > 0 {
+			ag.OperatorsReachable++
+		}
+	}
+	if ag.OperatorsTotal > 0 {
+		ag.DedupRatio = float64(ag.SPsTotal) / float64(ag.OperatorsTotal)
 	}
 	// Sorted variants are not on the struct (the renderer can sort the maps)
 	_ = sort.Strings
@@ -546,6 +601,7 @@ var enrichCmd = &cli.Command{
 				SPsByASN:       make(map[string]int),
 				ChainNodesBySW: make(map[string]int),
 			}
+			computeOperators(snap)
 			computeAggregates(snap)
 		}
 		if err := snapshot.Write(path, snap); err != nil {

@@ -33,12 +33,17 @@ import (
 )
 
 // Source picks where the active-SP set comes from.
+//
+// Filfox is the canonical source of truth for "has min power right now".
+// Filrep keeps miners with active numbers long after they go dark, so it's
+// a poor liveness signal — we use it only as enrichment metadata
+// (cross-validation tags + country code), never as a set source.
 type Source string
 
 const (
 	// SourceFilfox uses https://filfox.info/api/v1/miner/list/power to fetch
-	// the ~700 currently-active miners with power attached. Fast (~5s, paginated).
-	// Default. Recommended for normal snapshots.
+	// the ~726 currently-active miners with power attached. Fast (~5s, paginated).
+	// Default. Filrep enrichment runs on top automatically.
 	SourceFilfox Source = "filfox"
 
 	// SourceChainFull walks StateListMiners + StateMinerPower across all 750k
@@ -88,11 +93,17 @@ func Run(ctx context.Context, opts Options) ([]snapshot.SPRecord, error) {
 	}
 
 	var qualified []qualifiedSP
+	// sourceTagsByAddr records which sources reported each SP as active.
+	sourceTagsByAddr := map[string][]string{}
+
 	switch opts.Source {
 	case SourceFilfox:
 		qualified, err = fetchFilfoxActiveMiners(ctx, opts.OnProgress)
 		if err != nil {
 			return nil, fmt.Errorf("filfox: %w", err)
+		}
+		for _, q := range qualified {
+			sourceTagsByAddr[q.addr] = append(sourceTagsByAddr[q.addr], "filfox")
 		}
 	case SourceChainFull:
 		miners, err := rpc.StateListMiners(ctx)
@@ -101,6 +112,9 @@ func Run(ctx context.Context, opts Options) ([]snapshot.SPRecord, error) {
 		}
 		progress(opts.OnProgress, "list", int64(len(miners)), int64(len(miners)))
 		qualified = filterByPower(ctx, rpc, miners, opts.LotusConcurrency, opts.OnProgress, opts.MaxProviders)
+		for _, q := range qualified {
+			sourceTagsByAddr[q.addr] = append(sourceTagsByAddr[q.addr], "chain")
+		}
 	default:
 		return nil, fmt.Errorf("unknown spscan source %q", opts.Source)
 	}
@@ -109,8 +123,30 @@ func Run(ctx context.Context, opts Options) ([]snapshot.SPRecord, error) {
 		qualified = qualified[:opts.MaxProviders]
 	}
 
+	// Filrep enrichment: best-effort metadata on top of the chosen source's
+	// SP set. Never adds new SPs, never removes any — it just attaches
+	// reachability / uptime / country labels for cross-validation against
+	// our own libp2p probe. Filrep failure is non-fatal.
+	filrepByAddr := fetchFilrepEnrichment(ctx, opts.OnProgress)
+
 	// Phase 3: probe via libp2p
 	records := probeAll(ctx, rpc, h, qualified, opts)
+
+	// Attach source tags + Filrep enrichment metadata per record.
+	for i := range records {
+		addr := records[i].MinerID
+		if tags, ok := sourceTagsByAddr[addr]; ok {
+			records[i].SourceTags = tags
+		}
+		if fm, ok := filrepByAddr[addr]; ok {
+			records[i].FilrepReachability = fm.Reachability
+			if up, ok := fm.UptimeAverage.(float64); ok {
+				records[i].FilrepUptime = up
+			}
+			records[i].FilrepCountryCode = fm.IsoCode
+			records[i].SourceTags = append(records[i].SourceTags, "filrep-meta")
+		}
+	}
 	return records, nil
 }
 
@@ -243,7 +279,16 @@ func probeAll(ctx context.Context, rpc *scanner.LotusRPC, h host.Host, sps []qua
 			pctx, cancel := context.WithTimeout(ctx, opts.Timeout)
 			defer cancel()
 
-			info, err := getAddrInfo(pctx, rpc, sp.addr, &rec)
+			info, miInfo, err := getAddrInfo(pctx, rpc, sp.addr, &rec)
+			// miInfo is populated even when libp2p info parse fails, so we can
+			// always copy through Owner/Worker/Control/Beneficiary for clustering.
+			if miInfo != nil {
+				rec.OwnerAddr = miInfo.Owner
+				rec.WorkerAddr = miInfo.Worker
+				rec.BeneficiaryAddr = miInfo.Beneficiary
+				rec.ControlAddrs = miInfo.Control
+				rec.SectorSize = miInfo.SectorSize
+			}
 			if err != nil {
 				// Distinguish "no peer id on chain at all" vs "unparseable":
 				// the former is a chain-state reality, the latter a bug we'd want to know.
@@ -307,17 +352,21 @@ func probeAll(ctx context.Context, rpc *scanner.LotusRPC, h host.Host, sps []qua
 	return out
 }
 
-func getAddrInfo(ctx context.Context, rpc *scanner.LotusRPC, miner string, rec *snapshot.SPRecord) (*peer.AddrInfo, error) {
+// getAddrInfo returns both a parsed AddrInfo (or error) AND the underlying
+// MinerInfoResult, so callers can pick up Owner/Worker/Control even when the
+// miner has no usable peer ID. miInfo is non-nil whenever the StateMinerInfo
+// RPC succeeded, regardless of whether peer-ID parsing did.
+func getAddrInfo(ctx context.Context, rpc *scanner.LotusRPC, miner string, rec *snapshot.SPRecord) (*peer.AddrInfo, *scanner.MinerInfoResult, error) {
 	info, err := rpc.StateMinerInfo(ctx, miner)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if info.PeerId == "" {
-		return nil, fmt.Errorf("no peer ID")
+		return nil, info, fmt.Errorf("no peer ID")
 	}
 	pid, err := peer.Decode(info.PeerId)
 	if err != nil {
-		return nil, err
+		return nil, info, err
 	}
 	var addrs []multiaddr.Multiaddr
 	for _, raw := range info.Multiaddrs {
@@ -326,9 +375,9 @@ func getAddrInfo(ctx context.Context, rpc *scanner.LotusRPC, miner string, rec *
 		}
 	}
 	if len(addrs) == 0 {
-		return nil, fmt.Errorf("no addrs")
+		return nil, info, fmt.Errorf("no addrs")
 	}
-	return &peer.AddrInfo{ID: pid, Addrs: addrs}, nil
+	return &peer.AddrInfo{ID: pid, Addrs: addrs}, info, nil
 }
 
 // ipsFromMultiaddrs extracts unique IPv4/IPv6 strings from a multiaddr set.

@@ -32,6 +32,11 @@ type Snapshot struct {
 	ChainNodes []ChainNodeRecord `json:"chain_nodes"`
 	FoCNodes   []FoCNodeRecord   `json:"foc_nodes"`
 
+	// Operators is the deduplicated SP fleet — miner IDs grouped by shared
+	// owner / worker / control / beneficiary / IP. This is the real shape of
+	// the network. Computed by internal/cluster after the SP probe completes.
+	Operators []Operator `json:"operators,omitempty"`
+
 	// Aggregated counts (computed by the runner before write, for convenience)
 	Aggregates Aggregates `json:"aggregates"`
 
@@ -76,6 +81,17 @@ type SPRecord struct {
 	// Network-resolved fields
 	IPs       []string `json:"ips,omitempty"`
 	GeoIP     []GeoRow `json:"geoip,omitempty"`
+
+	// External signals from third-party sources (Filfox, Filrep, ...).
+	// SourceTags is the set of sources that reported this SP as active.
+	SourceTags []string `json:"source_tags,omitempty"`
+
+	// FilrepReachability and FilrepUptime are passthrough metadata from Filrep
+	// (api.filrep.io). They reflect Filrep's measurements over time, which is
+	// orthogonal to our own one-shot libp2p probe.
+	FilrepReachability string  `json:"filrep_reachability,omitempty"` // "reachable" | "unreachable" | "unknown"
+	FilrepUptime       float64 `json:"filrep_uptime,omitempty"`
+	FilrepCountryCode  string  `json:"filrep_country_code,omitempty"`
 }
 
 // ChainNodeRecord is one row per chain (full-node) peer we discovered via
@@ -140,6 +156,23 @@ type FoCNodeRecord struct {
 	LocationMatch string   `json:"location_match,omitempty"` // "match" | "mismatch" | "unknown"
 }
 
+// Operator is one deduplicated entity that controls one or more miner IDs.
+type Operator struct {
+	Representative  string   `json:"representative"` // canonical (lowest) miner ID
+	Members         []string `json:"members"`        // sorted miner IDs in this operator
+	Owners          []string `json:"owners,omitempty"`
+	Workers         []string `json:"workers,omitempty"`
+	Beneficiaries   []string `json:"beneficiaries,omitempty"`
+	IPs             []string `json:"ips,omitempty"`
+	RawBytePower    string   `json:"raw_byte_power"`
+	QualityAdjPower string   `json:"quality_adj_power"`
+
+	// Reachability rollup (computed during cluster aggregation):
+	// how many of this operator's miner IDs we could libp2p-dial.
+	ReachableMembers   int `json:"reachable_members"`
+	UnreachableMembers int `json:"unreachable_members"`
+}
+
 // GeoRow is one ASN/country tuple for a resolved IP.
 type GeoRow struct {
 	IP          string `json:"ip"`
@@ -159,6 +192,12 @@ type Aggregates struct {
 	SPsBySoftware      map[string]int `json:"sps_by_software"`      // detect.Software → count
 	SPsByCountry       map[string]int `json:"sps_by_country"`       // ISO country code → count
 	SPsByASN           map[string]int `json:"sps_by_asn"`           // "AS<n>" → count
+
+	// Operator-level rollups (after dedup clustering)
+	OperatorsTotal      int `json:"operators_total"`
+	OperatorsReachable  int `json:"operators_reachable"` // operator with at least 1 reachable member
+	DedupRatio          float64 `json:"dedup_ratio"`     // SPs / Operators (e.g. 3.3x means 3.3 miner IDs per real operator)
+
 	ChainNodesTotal    int            `json:"chain_nodes_total"`
 	ChainNodesBySW     map[string]int `json:"chain_nodes_by_software"`
 	FoCNodesTotal      int            `json:"foc_nodes_total"`

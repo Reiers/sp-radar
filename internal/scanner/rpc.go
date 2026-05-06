@@ -146,8 +146,13 @@ func (r *LotusRPC) StateMinerPower(ctx context.Context, maddr string) (*MinerPow
 }
 
 type MinerInfoResult struct {
-	PeerId     string
-	Multiaddrs [][]byte
+	PeerId      string
+	Multiaddrs  [][]byte
+	Owner       string
+	Worker      string
+	Beneficiary string
+	Control     []string
+	SectorSize  int64
 }
 
 // NetPeer is one entry from Filecoin.NetPeers.
@@ -196,13 +201,25 @@ func (r *LotusRPC) EthCall(ctx context.Context, to string, dataHex string) (stri
 
 func (r *LotusRPC) StateMinerInfo(ctx context.Context, maddr string) (*MinerInfoResult, error) {
 	var raw struct {
-		PeerId     string   `json:"PeerId"`
-		Multiaddrs []string `json:"Multiaddrs"`
+		PeerId               string   `json:"PeerId"`
+		Multiaddrs           []string `json:"Multiaddrs"`
+		Owner                string   `json:"Owner"`
+		Worker               string   `json:"Worker"`
+		Beneficiary          string   `json:"Beneficiary"`
+		ControlAddresses     []string `json:"ControlAddresses"`
+		SectorSize           int64    `json:"SectorSize"`
 	}
 	if err := r.call(ctx, "StateMinerInfo", []interface{}{maddr, nil}, &raw); err != nil {
 		return nil, err
 	}
-	out := &MinerInfoResult{PeerId: raw.PeerId}
+	out := &MinerInfoResult{
+		PeerId:      raw.PeerId,
+		Owner:       raw.Owner,
+		Worker:      raw.Worker,
+		Beneficiary: raw.Beneficiary,
+		Control:     raw.ControlAddresses,
+		SectorSize:  raw.SectorSize,
+	}
 	for _, b64 := range raw.Multiaddrs {
 		if decoded, err := base64.StdEncoding.DecodeString(b64); err == nil {
 			out.Multiaddrs = append(out.Multiaddrs, decoded)
