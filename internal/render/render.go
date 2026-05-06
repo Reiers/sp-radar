@@ -159,6 +159,12 @@ type PageData struct {
 	DecliningMiners      []DeclineRow
 	DecliningTotalCount  int     // total miners with negative delta
 	DecliningTotalLossPiB float64 // aggregate raw-PiB loss across the decliners
+
+	// Network sentiment meter (CMC fear/greed style, 0..100).
+	Sentiment SentimentMeter
+
+	// Power history points (raw + QA EiB over time).
+	PowerHistory []HistPoint
 }
 
 // DeclineRow is one row in the Declining storage providers section.
@@ -219,6 +225,8 @@ func buildPageData(s *snapshot.Snapshot) *PageData {
 
 	pd.HealthyFoCNodes, pd.FoCHiddenCount = filterHealthyFoC(s.FoCNodes)
 	pd.DecliningMiners, pd.DecliningTotalCount, pd.DecliningTotalLossPiB = buildDecliningMiners(s.SPs, 20)
+	pd.Sentiment = BuildSentimentMeter(s)
+	pd.PowerHistory = PowerHistoryWithLatest(s)
 	return pd
 }
 
@@ -285,6 +293,10 @@ func Render(snap *snapshot.Snapshot, outDir string) error {
 		"operatorMemberSample": operatorMemberSample,
 		"focRegion":            focRegion,
 		"regionPillByCC":       regionPillByCC,
+		"powerHistorySVG":      PowerHistorySVG,
+		"sentimentArc":         SentimentMeterArc,
+		"sentimentTickX":       SentimentMeterTickX,
+		"sentimentTickY":       SentimentMeterTickY,
 	}
 	// Pre-populate the IP → CC lookup so operatorRegions can resolve.
 	populateOperatorIPCC(snap)

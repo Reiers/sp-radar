@@ -323,10 +323,8 @@ main { max-width: var(--max-w); margin: 0 auto; padding: 0 1.5rem; }
   white-space: nowrap;
   padding: 0 0.6rem;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
-  border-right: 1px solid rgba(255, 255, 255, 0.18);
   position: relative;
 }
-.tier-seg:last-child { border-right: none; }
 .tier-seg .tier-rank {
   font-size: 0.62rem;
   font-weight: 600;
@@ -362,6 +360,138 @@ main { max-width: var(--max-w); margin: 0 auto; padding: 0 1.5rem; }
   letter-spacing: 0.04em;
   padding-top: 0.4rem;
 }
+
+/* --- Power history line chart --- */
+.history-chart {
+  margin: 0;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 1.25rem 1.5rem 1rem;
+}
+svg.history {
+  display: block;
+  width: 100%;
+  height: 360px;
+}
+svg.history .grid line { stroke: rgba(13, 71, 161, 0.08); stroke-width: 1; }
+svg.history .axis-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  fill: var(--dim);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+svg.history .legend-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  fill: var(--text-2);
+  font-weight: 500;
+}
+svg.history .hist-raw {
+  fill: none;
+  stroke: #1565C0;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 2px 4px rgba(21, 101, 192, 0.20));
+}
+svg.history .hist-raw-fill { fill: rgba(21, 101, 192, 0.10); stroke: none; }
+svg.history .hist-qa {
+  fill: none;
+  stroke: #6A1B9A;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+svg.history .peak-marker .peak-label {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  fill: var(--text);
+}
+
+/* --- Sentiment meter (network growth/decline gauge) --- */
+.sentiment-card {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 1.25rem;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 1.25rem 1.5rem;
+  margin: 1rem 0 1.5rem;
+  box-shadow: var(--shadow-sm);
+}
+@media (max-width: 700px) { .sentiment-card { grid-template-columns: 1fr; } }
+svg.sentiment {
+  display: block;
+  width: 240px;
+  height: 144px;
+}
+svg.sentiment .arc-bg {
+  fill: none;
+  stroke: rgba(13, 71, 161, 0.10);
+  stroke-width: 16;
+  stroke-linecap: round;
+}
+svg.sentiment .arc-fill {
+  fill: none;
+  stroke: url(#sentiment-grad);
+  stroke-width: 16;
+  stroke-linecap: round;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.10));
+}
+svg.sentiment .tick {
+  fill: var(--text);
+  stroke: #fff;
+  stroke-width: 2.5;
+}
+svg.sentiment .tick-label-num {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 800;
+  fill: var(--text);
+  letter-spacing: -0.03em;
+}
+svg.sentiment .tick-label-bottom {
+  font-size: 10px;
+  fill: var(--dim);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.sentiment-text { display: flex; flex-direction: column; gap: 0.35rem; }
+.sentiment-label-row { display: flex; align-items: baseline; gap: 0.65rem; flex-wrap: wrap; }
+.sentiment-label {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+.sentiment-delta {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-feature-settings: "tnum";
+}
+.sentiment-explain {
+  color: var(--text-2);
+  font-size: 0.88rem;
+  margin: 0;
+  line-height: 1.55;
+}
+.sentiment-scale {
+  display: flex;
+  font-size: 0.65rem;
+  color: var(--dim);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 0.4rem;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+.sentiment-scale span { padding: 0.15rem 0.55rem; border-radius: var(--radius-pill); border: 1px solid var(--border); white-space: nowrap; }
+.sentiment-scale span.active { color: var(--bg-to); }
 
 /* --- Charts --- */
 .chart {
