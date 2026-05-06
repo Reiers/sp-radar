@@ -36,6 +36,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // Network identifies which deployment of the registry to talk to.
@@ -280,7 +281,18 @@ func DecodePDPCapabilities(caps map[string][]byte) PDPOffering {
 		case "location":
 			o.Location = string(v)
 		case "ipnipeerid":
-			o.IPNIPeerID = string(v)
+			// Stored as raw libp2p PeerID bytes. Decode to canonical base58/CID string.
+			if id, err := peer.IDFromBytes(v); err == nil {
+				o.IPNIPeerID = id.String()
+			} else {
+				// Fall back to hex if it's not a valid PeerID (operators sometimes
+				// publish a string form directly).
+				if looksLikeText(v) {
+					o.IPNIPeerID = string(v)
+				} else {
+					o.IPNIPeerID = "0x" + hex.EncodeToString(v)
+				}
+			}
 		case "ipnipiece":
 			o.IPNISupportsPiece = bytesToBool(v)
 		case "ipniipfs":
@@ -316,6 +328,24 @@ func bytesToBig(b []byte) *big.Int {
 		return nil
 	}
 	return new(big.Int).SetBytes(b)
+}
+
+// looksLikeText returns true if every byte is printable ASCII or common
+// UTF-8 leading bytes. Used as a heuristic when we can't parse a value as
+// a typed PeerID and need to decide between treating it as a string or hex.
+func looksLikeText(b []byte) bool {
+	if len(b) == 0 {
+		return false
+	}
+	for _, c := range b {
+		if c < 0x20 && c != '\t' && c != '\n' && c != '\r' {
+			return false
+		}
+		if c == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // --- getProviderWithProduct decoder ---
