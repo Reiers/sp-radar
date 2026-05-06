@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Filecoin Network Census — {{.Network}} {{.GeneratedAt.Format "2006-01-02"}}</title>
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+<header>
+  <h1>Filecoin Network Census</h1>
+  <p class="meta">
+    {{.Network}} ·
+    snapshot {{.GeneratedAt.Format "2006-01-02 15:04 MST"}} ·
+    schema v{{.SchemaVersion}}
+  </p>
+</header>
+
+<main>
+
+<section id="overview">
+  <h2>Overview</h2>
+  <div class="cards">
+    <div class="card"><div class="num">{{.Aggregates.SPsTotal}}</div><div class="lbl">Storage providers</div><div class="sub">{{.Aggregates.SPsReachable}} reachable</div></div>
+    <div class="card"><div class="num">{{.Aggregates.ChainNodesTotal}}</div><div class="lbl">Chain nodes</div><div class="sub">discovered via libp2p</div></div>
+    <div class="card"><div class="num">{{.Aggregates.FoCNodesTotal}}</div><div class="lbl">FoC providers</div><div class="sub">{{.Aggregates.FoCNodesActive}} active · {{.Aggregates.FoCNodesReachable}} reachable</div></div>
+  </div>
+</section>
+
+<section id="sps-software">
+  <h2>SPs by software</h2>
+  {{if .Aggregates.SPsBySoftware}}
+  <table class="dist">
+    <thead><tr><th></th><th>Software</th><th>Count</th><th>%</th></tr></thead>
+    <tbody>
+    {{range $entry := softwareDistSorted .Aggregates.SPsBySoftware .Aggregates.SPsTotal}}
+      <tr>
+        <td><img class="logo" src="assets/logos/{{$entry.Logo}}" alt="{{$entry.Name}} logo" width="24" height="24"></td>
+        <td>{{$entry.Name}}</td>
+        <td class="n">{{$entry.Count}}</td>
+        <td class="n">{{printf "%.1f" $entry.Percent}}%</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No SP scan data in this snapshot.</p>{{end}}
+</section>
+
+<section id="chain-nodes">
+  <h2>Chain nodes by software</h2>
+  {{if .Aggregates.ChainNodesBySW}}
+  <table class="dist">
+    <thead><tr><th></th><th>Software</th><th>Count</th><th>%</th></tr></thead>
+    <tbody>
+    {{range $entry := softwareDistSorted .Aggregates.ChainNodesBySW .Aggregates.ChainNodesTotal}}
+      <tr>
+        <td><img class="logo" src="assets/logos/{{$entry.Logo}}" alt="{{$entry.Name}} logo" width="24" height="24"></td>
+        <td>{{$entry.Name}}</td>
+        <td class="n">{{$entry.Count}}</td>
+        <td class="n">{{printf "%.1f" $entry.Percent}}%</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No chain-node crawl data in this snapshot.</p>{{end}}
+</section>
+
+<section id="foc">
+  <h2>FoC providers</h2>
+  <p class="lead">From the on-chain ServiceProviderRegistry. {{len .FoCNodes}} listed.</p>
+  <table class="foc">
+    <thead><tr>
+      <th>#</th><th>Name</th><th>Service URL</th><th>Declared</th>
+      <th>Resolved</th><th>HTTP</th><th>Server</th>
+    </tr></thead>
+    <tbody>
+    {{range $i, $n := .FoCNodes}}
+      <tr class="{{if $n.HTTPReachable}}reachable{{else}}unreachable{{end}}">
+        <td class="n">{{$n.ProviderID}}</td>
+        <td class="name">{{$n.Name}}</td>
+        <td class="url"><a href="{{$n.ServiceURL}}" rel="nofollow noopener">{{$n.ServiceURL}}</a></td>
+        <td class="loc">{{$n.DeclaredLocation}}</td>
+        <td class="loc">
+          {{range $g := $n.GeoIP}}
+            {{$g.CountryCode}}{{if $g.City}} ({{$g.City}}){{end}}{{if $g.ASN}} · AS{{$g.ASN}}{{end}}
+          {{else}}—{{end}}
+        </td>
+        <td class="status">
+          {{if $n.HTTPReachable}}
+            <span class="ok">{{$n.HTTPStatusCode}}</span>
+          {{else}}
+            <span class="err" title="{{$n.HTTPError}}">×</span>
+          {{end}}
+        </td>
+        <td class="server">{{$n.HTTPServerHeader}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</section>
+
+<section id="run">
+  <h2>Run details</h2>
+  <dl class="run">
+    <dt>Started</dt><dd>{{.Run.StartedAt.Format "2006-01-02 15:04:05 MST"}}</dd>
+    <dt>Finished</dt><dd>{{.Run.FinishedAt.Format "2006-01-02 15:04:05 MST"}}</dd>
+    <dt>Duration</dt><dd>{{.Run.Duration}}</dd>
+    {{range $phase, $dur := .Run.PhaseTimes}}
+    <dt>{{$phase}}</dt><dd>{{$dur}}</dd>
+    {{end}}
+    <dt>Generator</dt><dd>{{.GeneratedBy}}</dd>
+    {{if .Run.Errors}}
+      <dt>Errors</dt>
+      <dd><ul>{{range $e := .Run.Errors}}<li>{{$e}}</li>{{end}}</ul></dd>
+    {{end}}
+  </dl>
+</section>
+
+</main>
+
+<footer>
+  <p>Filecoin Network Census · operator-published data via libp2p identify and on-chain ServiceProviderRegistry.</p>
+  <p class="muted">Logos used under fair-use citation; trademarks belong to their respective projects.</p>
+</footer>
+</body>
+</html>

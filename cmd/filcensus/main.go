@@ -33,6 +33,7 @@ import (
 	"github.com/Reiers/sp-radar/internal/foc"
 	"github.com/Reiers/sp-radar/internal/geoip"
 	"github.com/Reiers/sp-radar/internal/probe"
+	"github.com/Reiers/sp-radar/internal/render"
 	"github.com/Reiers/sp-radar/internal/scanner"
 	"github.com/Reiers/sp-radar/internal/snapshot"
 	"github.com/Reiers/sp-radar/internal/spscan"
@@ -71,6 +72,7 @@ var censusCmd = &cli.Command{
 		&cli.BoolFlag{Name: "skip-sps", Usage: "Skip SP enumeration"},
 		&cli.BoolFlag{Name: "skip-foc", Usage: "Skip FoC enumeration"},
 		&cli.BoolFlag{Name: "skip-chain-nodes", Usage: "Skip chain-node crawl"},
+		&cli.StringFlag{Name: "render", Usage: "If set, also render the static dashboard to this directory", Value: ""},
 	},
 	Action: runCensus,
 }
@@ -168,6 +170,13 @@ func runCensus(c *cli.Context) error {
 	fmt.Printf("  FoC providers: %d (%d active, %d reachable)\n",
 		snap.Aggregates.FoCNodesTotal, snap.Aggregates.FoCNodesActive, snap.Aggregates.FoCNodesReachable)
 	fmt.Printf("  Duration:      %s\n", snap.Run.Duration)
+
+	if renderDir := c.String("render"); renderDir != "" {
+		if err := render.Render(snap, renderDir); err != nil {
+			return fmt.Errorf("render: %w", err)
+		}
+		fmt.Printf("Rendered dashboard to %s/index.html\n", renderDir)
+	}
 	return nil
 }
 
