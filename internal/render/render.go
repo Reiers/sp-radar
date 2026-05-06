@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -93,6 +94,11 @@ func Render(snap *snapshot.Snapshot, outDir string) error {
 	}
 	funcs := template.FuncMap{
 		"softwareDistSorted": softwareDistSorted,
+		"add":               func(a, b int) int { return a + b },
+		"topOperators":      topOperators,
+		"powerPiB":          powerPiB,
+		"powerPctOfNetwork": powerPctOfNetwork,
+		"topNStrings":       topNStrings,
 	}
 	tpl, err := template.New("index").Funcs(funcs).Parse(string(tplBytes))
 	if err != nil {
@@ -108,6 +114,60 @@ func Render(snap *snapshot.Snapshot, outDir string) error {
 	}
 
 	return nil
+}
+
+// topOperators returns the first n operators (slice already sorted by power desc).
+func topOperators(ops []snapshot.Operator, n int) []snapshot.Operator {
+	if n <= 0 || n > len(ops) {
+		return ops
+	}
+	return ops[:n]
+}
+
+// powerPiB formats a big-int decimal byte string as PiB with 1 decimal place.
+func powerPiB(s string) string {
+	x, ok := new(big.Int).SetString(s, 10)
+	if !ok || x == nil {
+		return "—"
+	}
+	fx := new(big.Float).SetInt(x)
+	pib := new(big.Float).Quo(fx, big.NewFloat(1<<50))
+	f, _ := pib.Float64()
+	return fmt.Sprintf("%.1f", f)
+}
+
+// powerPctOfNetwork returns "X.XX%" of this row's power vs the sum of all
+// operator powers. Computed in big-int arithmetic to avoid float drift on
+// EiB-scale numbers.
+func powerPctOfNetwork(rowPower string, all []snapshot.Operator) string {
+	row, ok := new(big.Int).SetString(rowPower, 10)
+	if !ok || row == nil {
+		return "—"
+	}
+	total := new(big.Int)
+	for _, op := range all {
+		x, ok := new(big.Int).SetString(op.RawBytePower, 10)
+		if !ok {
+			continue
+		}
+		total.Add(total, x)
+	}
+	if total.Sign() == 0 {
+		return "—"
+	}
+	num := new(big.Float).SetInt(row)
+	den := new(big.Float).SetInt(total)
+	pct, _ := new(big.Float).Quo(new(big.Float).Mul(num, big.NewFloat(100)), den).Float64()
+	return fmt.Sprintf("%.2f%%", pct)
+}
+
+// topNStrings returns the first n elements of a string slice, joined with ", ".
+// Used to surface a few "top owners" in the operator table without overwhelming.
+func topNStrings(ss []string, n int) string {
+	if n <= 0 || n >= len(ss) {
+		return strings.Join(ss, ", ")
+	}
+	return strings.Join(ss[:n], ", ")
 }
 
 func copyEmbeddedDir(srcRoot, dstRoot string) error {

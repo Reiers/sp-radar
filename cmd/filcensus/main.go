@@ -180,8 +180,13 @@ func runCensus(c *cli.Context) error {
 		return fmt.Errorf("write snapshot: %w", err)
 	}
 	fmt.Printf("Wrote %s\n", out)
-	fmt.Printf("  SPs:           %d total, %d reachable\n",
-		snap.Aggregates.SPsTotal, snap.Aggregates.SPsReachable)
+	fmt.Printf("  Miner IDs:     %d (%d real / %d ghost)\n",
+		snap.Aggregates.SPsTotal, snap.Aggregates.SPsReal, snap.Aggregates.SPsGhost)
+	fmt.Printf("  Operators:     %d (%.1fx dedup) — %d reachable\n",
+		snap.Aggregates.OperatorsTotal, snap.Aggregates.DedupRatio, snap.Aggregates.OperatorsReachable)
+	fmt.Printf("  Probed:        %d reachable / %d total miner IDs\n",
+		snap.Aggregates.SPsReachable, snap.Aggregates.SPsTotal)
+	fmt.Printf("  Chain nodes:   %d\n", snap.Aggregates.ChainNodesTotal)
 	fmt.Printf("  FoC providers: %d (%d active, %d reachable)\n",
 		snap.Aggregates.FoCNodesTotal, snap.Aggregates.FoCNodesActive, snap.Aggregates.FoCNodesReachable)
 	fmt.Printf("  Duration:      %s\n", snap.Run.Duration)
@@ -414,10 +419,23 @@ func compareLocations(declared string, geo []snapshot.GeoRow) string {
 // computeOperators runs union-find clustering on the SP records and fills
 // snap.Operators. Mirrors the 2026-Q1 SP census report's grouping logic
 // (shared owner / worker / control / beneficiary / IP, with a CDN cap).
+//
+// We only cluster SPs with non-zero raw byte power. Zero-power miner IDs are
+// chain ghosts (registered but storing nothing) and would each become their
+// own singleton cluster, inflating the operator count without representing
+// real entities. They stay in snap.SPs so the per-miner detail is preserved,
+// but the dashboard's headline ("N operators run the network") only counts
+// real actors.
 func computeOperators(snap *snapshot.Snapshot) {
 	ids := make([]cluster.Identity, 0, len(snap.SPs))
 	reachableByID := make(map[string]bool, len(snap.SPs))
+	ghosts := 0
 	for _, sp := range snap.SPs {
+		reachableByID[sp.MinerID] = sp.Reachable
+		if !hasNonZeroPower(sp.RawBytePower) {
+			ghosts++
+			continue
+		}
 		controls := append([]string(nil), sp.ControlAddrs...)
 		ids = append(ids, cluster.Identity{
 			MinerID:         sp.MinerID,
@@ -429,7 +447,9 @@ func computeOperators(snap *snapshot.Snapshot) {
 			RawBytePower:    sp.RawBytePower,
 			QualityAdjPower: sp.QualityAdjPower,
 		})
-		reachableByID[sp.MinerID] = sp.Reachable
+	}
+	if ghosts > 0 {
+		fmt.Fprintf(os.Stderr, "[cluster] excluded %d zero-power miner IDs from operator clustering\n", ghosts)
 	}
 	clusters := cluster.Build(ids)
 	snap.Operators = make([]snapshot.Operator, 0, len(clusters))
@@ -455,10 +475,30 @@ func computeOperators(snap *snapshot.Snapshot) {
 	}
 }
 
+// hasNonZeroPower returns true if the big-int decimal string parses to > 0.
+// Empty / unparseable / "0" all return false (treated as ghost).
+func hasNonZeroPower(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "0" {
+		return false
+	}
+	for _, c := range s {
+		if c >= '1' && c <= '9' {
+			return true
+		}
+	}
+	return false
+}
+
 func computeAggregates(snap *snapshot.Snapshot) {
 	ag := &snap.Aggregates
 	ag.SPsTotal = len(snap.SPs)
 	for _, sp := range snap.SPs {
+		if hasNonZeroPower(sp.RawBytePower) {
+			ag.SPsReal++
+		} else {
+			ag.SPsGhost++
+		}
 		if sp.Reachable {
 			ag.SPsReachable++
 		}
@@ -498,7 +538,9 @@ func computeAggregates(snap *snapshot.Snapshot) {
 		}
 	}
 	if ag.OperatorsTotal > 0 {
-		ag.DedupRatio = float64(ag.SPsTotal) / float64(ag.OperatorsTotal)
+		// Dedup ratio is real SPs (non-ghost) / operators — the headline
+		// number that says how aggressive the consolidation is.
+		ag.DedupRatio = float64(ag.SPsReal) / float64(ag.OperatorsTotal)
 	}
 	// Sorted variants are not on the struct (the renderer can sort the maps)
 	_ = sort.Strings

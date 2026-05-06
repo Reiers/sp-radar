@@ -96,6 +96,11 @@ img.logo {
   border-radius: 6px;
 }
 
+/* operators table */
+table.ops td.name { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.8rem; }
+table.ops td.n { white-space: nowrap; }
+table.ops td.loc { font-size: 0.75rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* run details */
 dl.run {
   display: grid;

@@ -21,10 +21,52 @@
 <section id="overview">
   <h2>Overview</h2>
   <div class="cards">
-    <div class="card"><div class="num">{{.Aggregates.SPsTotal}}</div><div class="lbl">Storage providers</div><div class="sub">{{.Aggregates.SPsReachable}} reachable</div></div>
-    <div class="card"><div class="num">{{.Aggregates.ChainNodesTotal}}</div><div class="lbl">Chain nodes</div><div class="sub">discovered via libp2p</div></div>
-    <div class="card"><div class="num">{{.Aggregates.FoCNodesTotal}}</div><div class="lbl">FoC providers</div><div class="sub">{{.Aggregates.FoCNodesActive}} active · {{.Aggregates.FoCNodesReachable}} reachable</div></div>
+    <div class="card">
+      <div class="num">{{.Aggregates.OperatorsTotal}}</div>
+      <div class="lbl">Real operators</div>
+      <div class="sub">{{printf "%.1f" .Aggregates.DedupRatio}}× dedup · {{.Aggregates.OperatorsReachable}} reachable</div>
+    </div>
+    <div class="card">
+      <div class="num">{{.Aggregates.SPsReal}}</div>
+      <div class="lbl">Active miner IDs</div>
+      <div class="sub">+{{.Aggregates.SPsGhost}} ghost (zero power)</div>
+    </div>
+    <div class="card">
+      <div class="num">{{.Aggregates.ChainNodesTotal}}</div>
+      <div class="lbl">Chain nodes</div>
+      <div class="sub">via libp2p NetPeers</div>
+    </div>
+    <div class="card">
+      <div class="num">{{.Aggregates.FoCNodesTotal}}</div>
+      <div class="lbl">FoC providers</div>
+      <div class="sub">{{.Aggregates.FoCNodesActive}} active · {{.Aggregates.FoCNodesReachable}} reachable</div>
+    </div>
   </div>
+</section>
+
+<section id="operators">
+  <h2>Operator concentration</h2>
+  <p class="lead">{{len .Operators}} unique entities run the active fleet, after deduplicating miner IDs by shared owner / worker / control / beneficiary / IP.</p>
+  {{if .Operators}}
+  <table class="ops">
+    <thead><tr>
+      <th>#</th><th>Operator</th><th>Miner IDs</th><th>Power (PiB)</th><th>% net</th><th>Reachable</th><th>Top owners</th>
+    </tr></thead>
+    <tbody>
+    {{range $i, $op := topOperators .Operators 30}}
+      <tr>
+        <td class="n">{{add $i 1}}</td>
+        <td class="name">{{$op.Representative}}</td>
+        <td class="n">{{len $op.Members}}</td>
+        <td class="n">{{powerPiB $op.RawBytePower}}</td>
+        <td class="n">{{powerPctOfNetwork $op.RawBytePower $.Operators}}</td>
+        <td class="n">{{$op.ReachableMembers}}/{{len $op.Members}}</td>
+        <td class="loc">{{topNStrings $op.Owners 2}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No operator clustering data in this snapshot.</p>{{end}}
 </section>
 
 <section id="sps-software">

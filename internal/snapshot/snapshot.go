@@ -188,6 +188,8 @@ type GeoRow struct {
 // have to walk every record. Updated by the runner just before write.
 type Aggregates struct {
 	SPsTotal           int            `json:"sps_total"`
+	SPsReal            int            `json:"sps_real"`            // SPs with non-zero raw power (real actors)
+	SPsGhost           int            `json:"sps_ghost"`           // chain-registered with zero power
 	SPsReachable       int            `json:"sps_reachable"`
 	SPsBySoftware      map[string]int `json:"sps_by_software"`      // detect.Software → count
 	SPsByCountry       map[string]int `json:"sps_by_country"`       // ISO country code → count
