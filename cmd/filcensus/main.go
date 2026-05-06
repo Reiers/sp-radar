@@ -30,6 +30,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Reiers/sp-radar/internal/chaincrawl"
 	"github.com/Reiers/sp-radar/internal/foc"
 	"github.com/Reiers/sp-radar/internal/geoip"
 	"github.com/Reiers/sp-radar/internal/probe"
@@ -134,9 +135,14 @@ func runCensus(c *cli.Context) error {
 		snap.Run.PhaseTimes["sps"] = time.Since(t0)
 	}
 
-	// --- Chain-node crawl phase (placeholder; real wiring lands next) ---
+	// --- Chain-node crawl phase ---
 	if !c.Bool("skip-chain-nodes") {
-		fmt.Fprintln(os.Stderr, "[chain-nodes] not yet wired (lands in next commit)")
+		t0 := time.Now()
+		if err := runChainCrawlPhase(ctx, c, snap); err != nil {
+			snap.Run.Errors = append(snap.Run.Errors, fmt.Sprintf("chain-nodes: %v", err))
+			fmt.Fprintf(os.Stderr, "[chain-nodes] error: %v (continuing)\n", err)
+		}
+		snap.Run.PhaseTimes["chain-nodes"] = time.Since(t0)
 	}
 
 	// --- HTTP probes against FoC serviceURLs ---
@@ -177,6 +183,24 @@ func runCensus(c *cli.Context) error {
 		}
 		fmt.Printf("Rendered dashboard to %s/index.html\n", renderDir)
 	}
+	return nil
+}
+
+// runChainCrawlPhase walks NetPeers + NetAgentVersion to enumerate the
+// directly-connected chain-node fleet.
+func runChainCrawlPhase(ctx context.Context, c *cli.Context, snap *snapshot.Snapshot) error {
+	fmt.Fprintln(os.Stderr, "[chain-nodes] crawling NetPeers...")
+	recs, err := chaincrawl.Run(ctx, chaincrawl.Options{
+		APIInfo:          c.String("api"),
+		AgentConcurrency: 16,
+		OnProgress: func(done, total int64) {
+			fmt.Fprintf(os.Stderr, "[chain-nodes] %d/%d\n", done, total)
+		},
+	})
+	if err != nil {
+		return err
+	}
+	snap.ChainNodes = recs
 	return nil
 }
 
@@ -254,6 +278,25 @@ func runGeoIPPhase(ctx context.Context, snap *snapshot.Snapshot) error {
 				continue
 			}
 			snap.SPs[i].GeoIP = append(snap.SPs[i].GeoIP, snapshot.GeoRow{
+				IP:          r.IP,
+				Country:     r.Country,
+				CountryCode: r.CountryCode,
+				Region:      r.Region,
+				City:        r.City,
+				ASN:         r.ASN,
+				ASNOrg:      r.ASNOrg,
+			})
+		}
+	}
+
+	// Enrich chain nodes
+	for i := range snap.ChainNodes {
+		for _, ip := range snap.ChainNodes[i].IPs {
+			r, err := cache.Lookup(ctx, ip)
+			if err != nil || r == nil {
+				continue
+			}
+			snap.ChainNodes[i].GeoIP = append(snap.ChainNodes[i].GeoIP, snapshot.GeoRow{
 				IP:          r.IP,
 				Country:     r.Country,
 				CountryCode: r.CountryCode,

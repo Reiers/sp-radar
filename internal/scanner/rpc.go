@@ -107,6 +107,33 @@ type MinerInfoResult struct {
 	Multiaddrs [][]byte
 }
 
+// NetPeer is one entry from Filecoin.NetPeers.
+type NetPeer struct {
+	ID    string   `json:"ID"`
+	Addrs []string `json:"Addrs"`
+}
+
+// NetPeers returns the connected libp2p peers of the daemon. We use these as
+// the seed set for chain-node enumeration. Filecoin.NetPeers returns
+// AddrInfo objects with peer ID + multiaddrs.
+func (r *LotusRPC) NetPeers(ctx context.Context) ([]NetPeer, error) {
+	var out []NetPeer
+	if err := r.call(ctx, "NetPeers", []interface{}{}, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// NetAgentVersion returns the agent string our daemon observed for the given
+// peer (i.e. what they announced via libp2p identify). Empty if unknown.
+func (r *LotusRPC) NetAgentVersion(ctx context.Context, peerID string) (string, error) {
+	var out string
+	if err := r.call(ctx, "NetAgentVersion", []interface{}{peerID}, &out); err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
 // EthCall executes a read-only EVM call against `to` with the given data
 // (0x-prefixed hex). Returns the raw return data hex-encoded with 0x prefix.
 //
