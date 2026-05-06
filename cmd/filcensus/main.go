@@ -50,6 +50,7 @@ func main() {
 		Version: version,
 		Commands: []*cli.Command{
 			censusCmd,
+			enrichCmd,
 			focCountCmd,
 		},
 	}
@@ -74,6 +75,7 @@ var censusCmd = &cli.Command{
 		&cli.BoolFlag{Name: "skip-sps", Usage: "Skip SP enumeration"},
 		&cli.BoolFlag{Name: "skip-foc", Usage: "Skip FoC enumeration"},
 		&cli.BoolFlag{Name: "skip-chain-nodes", Usage: "Skip chain-node crawl"},
+		&cli.BoolFlag{Name: "with-geoip", Usage: "Inline GeoIP enrichment (slower; default off so live capture finishes fast)", Value: false},
 		&cli.StringFlag{Name: "render", Usage: "If set, also render the static dashboard to this directory", Value: ""},
 	},
 	Action: runCensus,
@@ -153,13 +155,17 @@ func runCensus(c *cli.Context) error {
 		snap.Run.PhaseTimes["foc-http"] = time.Since(t0)
 	}
 
-	// --- GeoIP enrichment (best effort; no-op if no MMDB configured) ---
-	t0 := time.Now()
-	if err := runGeoIPPhase(ctx, snap); err != nil {
-		snap.Run.Errors = append(snap.Run.Errors, fmt.Sprintf("geoip: %v", err))
-		fmt.Fprintf(os.Stderr, "[geoip] error: %v (continuing)\n", err)
+	// --- GeoIP enrichment (only if explicitly requested) ---
+	if c.Bool("with-geoip") {
+		t0 := time.Now()
+		if err := runGeoIPPhase(ctx, snap); err != nil {
+			snap.Run.Errors = append(snap.Run.Errors, fmt.Sprintf("geoip: %v", err))
+			fmt.Fprintf(os.Stderr, "[geoip] error: %v (continuing)\n", err)
+		}
+		snap.Run.PhaseTimes["geoip"] = time.Since(t0)
+	} else {
+		fmt.Fprintln(os.Stderr, "[geoip] skipped (use 'filcensus enrich' or --with-geoip to enrich)")
 	}
-	snap.Run.PhaseTimes["geoip"] = time.Since(t0)
 
 	computeAggregates(snap)
 
@@ -506,6 +512,48 @@ func runFoCPhase(ctx context.Context, rpc *scanner.LotusRPC, network foc.Network
 		}
 	}
 	return nil
+}
+
+// enrichCmd applies GeoIP enrichment to an existing snapshot file in-place.
+// Decoupled from `census` so the live data capture stays fast and we don't
+// risk losing the data fetch if MaxMind has an issue.
+var enrichCmd = &cli.Command{
+	Name:      "enrich",
+	Usage:     "Apply GeoIP enrichment to an existing snapshot file in-place",
+	ArgsUsage: "<snapshot.json>",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{Name: "recompute-aggregates", Usage: "Recompute snap.Aggregates after enrichment", Value: true},
+	},
+	Action: func(c *cli.Context) error {
+		if c.NArg() != 1 {
+			return fmt.Errorf("usage: filcensus enrich <snapshot.json>")
+		}
+		path := c.Args().First()
+		snap, err := snapshot.Read(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		t0 := time.Now()
+		if err := runGeoIPPhase(c.Context, snap); err != nil {
+			return fmt.Errorf("geoip: %w", err)
+		}
+		snap.Run.PhaseTimes["geoip"] = time.Since(t0)
+		if c.Bool("recompute-aggregates") {
+			// Reset and recompute. Existing aggregates may include stale empty maps.
+			snap.Aggregates = snapshot.Aggregates{
+				SPsBySoftware:  make(map[string]int),
+				SPsByCountry:   make(map[string]int),
+				SPsByASN:       make(map[string]int),
+				ChainNodesBySW: make(map[string]int),
+			}
+			computeAggregates(snap)
+		}
+		if err := snapshot.Write(path, snap); err != nil {
+			return fmt.Errorf("write: %w", err)
+		}
+		fmt.Printf("Enriched %s in %s\n", path, snap.Run.PhaseTimes["geoip"])
+		return nil
+	},
 }
 
 // focCountCmd is a quick smoke test that just prints provider counts. Useful

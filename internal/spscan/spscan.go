@@ -245,7 +245,10 @@ func probeAll(ctx context.Context, rpc *scanner.LotusRPC, h host.Host, sps []qua
 
 			info, err := getAddrInfo(pctx, rpc, sp.addr, &rec)
 			if err != nil {
+				// Distinguish "no peer id on chain at all" vs "unparseable":
+				// the former is a chain-state reality, the latter a bug we'd want to know.
 				rec.DialError = "addr-info: " + err.Error()
+				rec.Software = string(detect.SoftwareNoPeerID)
 				out[idx] = rec
 				if n := done.Add(1); n%50 == 0 || n == total {
 					progress(opts.OnProgress, "probe", n, total)
@@ -263,6 +266,7 @@ func probeAll(ctx context.Context, rpc *scanner.LotusRPC, h host.Host, sps []qua
 			if err := h.Connect(pctx, *info); err != nil {
 				rec.DialError = "connect: " + err.Error()
 				rec.DialDuration = time.Since(start)
+				rec.Software = string(detect.SoftwarePrivate)
 				out[idx] = rec
 				if n := done.Add(1); n%50 == 0 || n == total {
 					progress(opts.OnProgress, "probe", n, total)
@@ -285,6 +289,13 @@ func probeAll(ctx context.Context, rpc *scanner.LotusRPC, h host.Host, sps []qua
 			rec.Software = string(cls.Software)
 			rec.SoftwareVersion = cls.Version
 			rec.IndexerCapable = cls.IndexerCapable
+			// Reachable but agent string didn't match any known software.
+			// Promote the bucket label from "unknown" to "other" so the dashboard
+			// distinguishes "we asked and they spoke a language we don't know"
+			// from "we never got to ask them".
+			if rec.Software == "" || rec.Software == string(detect.Unknown) {
+				rec.Software = string(detect.SoftwareOther)
+			}
 
 			out[idx] = rec
 			if n := done.Add(1); n%50 == 0 || n == total {

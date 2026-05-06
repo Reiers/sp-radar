@@ -31,6 +31,15 @@ const (
 
 	// Catch-all
 	Unknown Software = "unknown"
+
+	// Reachability buckets used by the SP collector to distinguish *why* a
+	// node is unclassified. These are not real software identifiers; they
+	// describe collection outcome. Surfaced as their own labels in the
+	// dashboard so "we couldn't reach them" doesn't get conflated with
+	// "we reached them but didn't recognize the software".
+	SoftwareNoPeerID Software = "no-peer-id"  // chain has no peer ID for this miner
+	SoftwarePrivate  Software = "private"     // peer ID published, but we couldn't dial
+	SoftwareOther    Software = "other"       // dialed and got an agent string we don't recognize
 )
 
 // Role is the broad category a node falls into. One signature can classify
