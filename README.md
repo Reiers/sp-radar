@@ -12,6 +12,7 @@ filcensus connects to a mainnet Lotus node, enumerates every active SP from chai
 
 - **SPs** — software (Curio, Boost, lotus-miner, Venus-miner, Droplet), version, peer ID, multiaddrs, IP, ASN, country, raw/QA power, sector size, faulty sectors
 - **Chain nodes** — software (Lotus, Forest, Venus), version, peer ID, IP, ASN, country, role hints
+- **FoC service providers** — from the [Filecoin Pay subgraph](https://github.com/FilOzone/filecoin-pay-explorer): Operators (Storacha, DealBot, FWSS, ...), rails created, settled volume in USDFC/FIL, commission earned, unique payers/payees, with best-effort cross-reference from FoC payee addresses back to SP miner IDs
 - **Geography & ASN concentration** — power-weighted, per country and per ASN
 - **Version adoption curves** — trend lines across snapshots
 
