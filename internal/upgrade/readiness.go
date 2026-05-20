@@ -40,8 +40,21 @@ type MinVersion struct {
 //	              v1.36.0-rc1 also works (release notes say so explicitly).
 //	              Source: github.com/filecoin-project/lotus/releases/v1.36.0
 //	Lotus-miner : same release tag prefix (miner/v1.36.0).
-//	Curio       : v1.28.0 is the MANDATORY mainnet release for nv28.
-//	              Source: github.com/filecoin-project/curio/releases/v1.28.0
+//	Curio       : v1.28.1 is the actual MANDATORY mainnet release for nv28.
+//	              v1.28.0's release notes say it's the nv28 release, BUT
+//	              v1.28.0 pins lotus v1.36.0-rc1 whose mainnet Fire Horse
+//	              activation epoch in build/buildconstants/params_mainnet.go
+//	              is the placeholder value 9999999999, not the real 6052800.
+//	              v1.28.1 bumps to lotus v1.36.0 final which contains the
+//	              actual 6052800 epoch. A v1.28.0 node will not activate
+//	              nv28 at epoch 6052800 and will fall off consensus when
+//	              the rest of the network migrates.
+//	              The v1.28.1 release notes call this an "optional upgrade
+//	              for PoREP-only SPs already on 1.28.0" — that statement
+//	              is incorrect in the consensus-critical sense and was
+//	              verified by reading the diff at
+//	              github.com/filecoin-project/lotus/compare/v1.36.0-rc1...v1.36.0
+//	              Source: github.com/filecoin-project/curio/releases/v1.28.1
 //	Forest      : v0.33.4 is the MANDATORY mainnet release for nv28. Earlier
 //	              0.33.x releases only ship calibnet / devnet support; v0.32.4
 //	              was just the internal "nv28 skeleton" PR. Corrected after
@@ -60,7 +73,7 @@ type MinVersion struct {
 var NV28FireHorse = []MinVersion{
 	{Software: detect.Lotus, MinSemver: "1.36.0"},
 	{Software: detect.LotusMiner, MinSemver: "1.36.0"},
-	{Software: detect.Curio, MinSemver: "1.28.0"},
+	{Software: detect.Curio, MinSemver: "1.28.1"},
 	{Software: detect.Forest, MinSemver: "0.33.4"},
 	// Venus minimum is provisional; no mainnet release at time of writing.
 	// We surface this state via the Pending flag on the Bucket so the UI
