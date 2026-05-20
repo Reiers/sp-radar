@@ -70,6 +70,7 @@ func main() {
 	mux.HandleFunc("/healthz", srv.handleHealth)
 	mux.HandleFunc("/_ingest", srv.handleIngest)
 	mux.HandleFunc("/_status", srv.handleStatus)
+	mux.HandleFunc("/api/upgrade/nv28.json", srv.handleUpgradeNV28)
 
 	// On startup: render any latest snapshot we already have on disk so the
 	// dashboard is correct even before the next ingest fires.
@@ -125,6 +126,11 @@ type server struct {
 	// renderMu serialises rendering so two near-simultaneous uploads don't
 	// stomp each other.
 	renderMu sync.Mutex
+
+	// readiness cache + lock, used by handleUpgradeNV28 (upgrade.go) so we
+	// don't re-parse the snapshot on every hit.
+	readinessMu sync.Mutex
+	readiness   *readinessCache
 }
 
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
