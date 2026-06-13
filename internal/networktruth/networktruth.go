@@ -88,6 +88,23 @@ func Fetch(ctx context.Context, rpc *scanner.LotusRPC) (*Result, error) {
 		res.MinerAboveMinPowerCount = intFromMap(state, "MinerAboveMinPowerCount")
 	}
 
+	// Light-client fallback: Lantern's StateReadState returns the f04 actor
+	// state as an opaque CBOR blob rather than a decoded field map, so the
+	// power totals above stay zero. StateMinerPower(anyMiner).TotalPower
+	// carries the whole-network raw + QA power and IS decoded by the light
+	// client, so recover the two headline numbers from there when f04 came
+	// back empty. Pledge/deal/datacap still require real actor-state decoding.
+	if res.TotalRawBytePower.Sign() == 0 || res.TotalQualityAdjPower.Sign() == 0 {
+		if raw, qa, ok := networkPowerFromMinerPower(ctx, rpc); ok {
+			if res.TotalRawBytePower.Sign() == 0 {
+				res.TotalRawBytePower.Set(raw)
+			}
+			if res.TotalQualityAdjPower.Sign() == 0 {
+				res.TotalQualityAdjPower.Set(qa)
+			}
+		}
+	}
+
 	// f05 — StorageMarket
 	if state, balance, err := readActorState(ctx, rpc, "f05"); err != nil {
 		if firstErr == nil {
@@ -163,6 +180,35 @@ func dealQueryable(ctx context.Context, rpc *scanner.LotusRPC, dealID int64) boo
 		return false
 	}
 	return true
+}
+
+// networkPowerFromMinerPower reads whole-network raw + QA power from the
+// TotalPower field of a StateMinerPower response. Every StateMinerPower
+// reply carries the network total alongside the per-miner claim, so any
+// valid miner ID works. We try a couple of low IDs for resilience. This is
+// the light-client path for the headline power numbers when f04 actor-state
+// decoding is unavailable (e.g. Lantern returns opaque CBOR).
+func networkPowerFromMinerPower(ctx context.Context, rpc *scanner.LotusRPC) (raw, qa *big.Int, ok bool) {
+	for _, m := range []string{"f01000", "f0100", "f01"} {
+		lctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		var dst struct {
+			TotalPower struct {
+				RawBytePower    string `json:"RawBytePower"`
+				QualityAdjPower string `json:"QualityAdjPower"`
+			} `json:"TotalPower"`
+		}
+		err := rpcCall(lctx, rpc, "StateMinerPower", []interface{}{m, nil}, &dst)
+		cancel()
+		if err != nil {
+			continue
+		}
+		r, rok := new(big.Int).SetString(dst.TotalPower.RawBytePower, 10)
+		q, qok := new(big.Int).SetString(dst.TotalPower.QualityAdjPower, 10)
+		if rok && qok && r.Sign() > 0 {
+			return r, q, true
+		}
+	}
+	return nil, nil, false
 }
 
 // chainHead returns the current head epoch.
