@@ -219,10 +219,17 @@ type SentimentMeter struct {
 	PriorRawPiB float64
 }
 
-// BuildSentimentMeter returns a SentimentMeter from the snapshot's
-// declining-vs-gaining miner deltas. We sum all per-miner Filfox deltas
-// across the active SP set and use that as the "this measurement period"
-// delta. Score is mapped from the resulting percentage of network raw power.
+// BuildSentimentMeter returns a SentimentMeter for snapshot s.
+//
+// PREFERRED path: when a prior snapshot is available, the meter is a TRUE
+// snapshot-over-snapshot diff of whole-network raw power (s.raw - prior.raw).
+// This is the honest "is the network growing or shrinking since last time"
+// signal and it reflects the absolute network trend across our own snapshot
+// history.
+//
+// FALLBACK path (prior == nil, i.e. first-ever snapshot): sum the per-miner
+// Filfox measurement-period deltas. This is noisier and only measures Filfox's
+// own intra-period window, but it's the best we can do with no history.
 //
 // Score buckets (mapped from delta-as-pct of raw):
 //
@@ -232,26 +239,60 @@ type SentimentMeter struct {
 //	delta in +0.5..+2%   -> 60..85 ("Growing")
 //	delta >= +2%   -> 85..100 ("Booming")
 func BuildSentimentMeter(s *snapshot.Snapshot) SentimentMeter {
+	return BuildSentimentMeterVs(s, nil)
+}
+
+// BuildSentimentMeterVs computes the meter for s, diffing against prior when
+// prior is non-nil (true snapshot-over-snapshot trend).
+func BuildSentimentMeterVs(s, prior *snapshot.Snapshot) SentimentMeter {
 	m := SentimentMeter{Score: 50, Label: "Stable", AccentColor: "#8493AE"}
-	if s == nil || s.NetworkTruth == nil || len(s.SPs) == 0 {
+	if s == nil || s.NetworkTruth == nil {
 		return m
 	}
 	const piB = float64(1 << 50)
-	netDelta := 0.0
-	for _, sp := range s.SPs {
-		if sp.RawBytePowerDelta == "" || sp.RawBytePowerDelta == "0" {
-			continue
+
+	var netDelta, priorRaw float64
+	curRaw := s.NetworkTruth.RawPiB * piB
+
+	if prior != nil && prior.NetworkTruth != nil && prior.NetworkTruth.RawPiB > 0 {
+		// True trend: difference in absolute network raw power between the
+		// previous snapshot and this one.
+		priorRaw = prior.NetworkTruth.RawPiB * piB
+		netDelta = curRaw - priorRaw
+	} else {
+		// No history yet: fall back to summed Filfox per-miner deltas.
+		if len(s.SPs) == 0 {
+			return m
 		}
-		v := parseBigToFloat(sp.RawBytePowerDelta)
-		netDelta += v
+		for _, sp := range s.SPs {
+			if sp.RawBytePowerDelta == "" || sp.RawBytePowerDelta == "0" {
+				continue
+			}
+			netDelta += parseBigToFloat(sp.RawBytePowerDelta)
+		}
+		priorRaw = curRaw - netDelta
 	}
-	priorRaw := s.NetworkTruth.RawPiB*piB - netDelta
+
 	pctChange := 0.0
 	if priorRaw > 0 {
 		pctChange = (netDelta / priorRaw) * 100
 	}
-	// Map pctChange into [0,100]: clamp to [-2, +2] then scale linearly
-	clamp := pctChange
+
+	// Normalise the bucket score to a ~monthly rate so the dial reflects the
+	// PACE of change, not the (variable) gap between snapshots. A -6.7% drop
+	// over 24 days and the same drop over 2 days are very different signals;
+	// the meter buckets (±2% = extremes) are calibrated for a ~30-day window.
+	// The DISPLAYED DeltaPiB / PriorRawPiB below stay as the real absolute
+	// change between the two snapshots; only the score mapping is rate-scaled.
+	scorePct := pctChange
+	if prior != nil && prior.NetworkTruth != nil {
+		if days := s.GeneratedAt.Sub(prior.GeneratedAt).Hours() / 24; days > 0.5 {
+			scorePct = pctChange * (30.0 / days)
+		}
+	}
+
+	// Map scorePct into [0,100]: clamp to [-2, +2] then scale linearly
+	clamp := scorePct
 	if clamp < -2 {
 		clamp = -2
 	}

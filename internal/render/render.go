@@ -199,6 +199,10 @@ type GeoSlice struct {
 
 // buildPageData computes all derived fields.
 func buildPageData(s *snapshot.Snapshot) *PageData {
+	return buildPageDataVs(s, nil)
+}
+
+func buildPageDataVs(s, prior *snapshot.Snapshot) *PageData {
 	pd := &PageData{Snapshot: s}
 	pd.NarrativeFiftyPctOps = opsForPowerThreshold(s.Operators, 0.50)
 	pd.NarrativeSeventyFivePctOps = opsForPowerThreshold(s.Operators, 0.75)
@@ -226,7 +230,7 @@ func buildPageData(s *snapshot.Snapshot) *PageData {
 
 	pd.HealthyFoCNodes, pd.FoCHiddenCount = filterHealthyFoC(s.FoCNodes)
 	pd.DecliningMiners, pd.DecliningTotalCount, pd.DecliningTotalLossPiB = buildDecliningMiners(s.SPs, 20)
-	pd.Sentiment = BuildSentimentMeter(s)
+	pd.Sentiment = BuildSentimentMeterVs(s, prior)
 	pd.PowerHistory = PowerHistoryWithLatest(s)
 	return pd
 }
@@ -262,6 +266,14 @@ func opsForPowerThreshold(ops []snapshot.Operator, frac float64) int {
 
 // Render produces the static dashboard at outDir from snap.
 func Render(snap *snapshot.Snapshot, outDir string) error {
+	return RenderWithPrior(snap, nil, outDir)
+}
+
+// RenderWithPrior renders the dashboard for snap, diffing the growth meter
+// against prior (the previous snapshot) when prior is non-nil. This makes the
+// "is the network growing or shrinking?" meter a true snapshot-over-snapshot
+// trend instead of a single-window Filfox delta.
+func RenderWithPrior(snap, prior *snapshot.Snapshot, outDir string) error {
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
@@ -313,7 +325,7 @@ func Render(snap *snapshot.Snapshot, outDir string) error {
 		return err
 	}
 	defer idx.Close()
-	pd := buildPageData(snap)
+	pd := buildPageDataVs(snap, prior)
 	if err := tpl.Execute(idx, pd); err != nil {
 		return fmt.Errorf("execute: %w", err)
 	}

@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -306,9 +307,59 @@ func (s *server) renderLatest() error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", candidate, err)
 	}
-	if err := render.Render(snap, s.siteDir); err != nil {
+	// Find the prior snapshot so the growth meter is a true
+	// snapshot-over-snapshot diff rather than a single Filfox window.
+	prior := s.priorSnapshot(filepath.Base(candidate))
+	if err := render.RenderWithPrior(snap, prior, s.siteDir); err != nil {
 		return err
 	}
-	log.Printf("rendered %s -> %s", filepath.Base(candidate), s.siteDir)
+	if prior != nil {
+		log.Printf("rendered %s (vs prior) -> %s", filepath.Base(candidate), s.siteDir)
+	} else {
+		log.Printf("rendered %s (no prior) -> %s", filepath.Base(candidate), s.siteDir)
+	}
 	return nil
+}
+
+// priorSnapshot returns the most recent dated mainnet-YYYY-MM-DD.json snapshot
+// whose filename sorts strictly before currentBase. Returns nil when there is
+// no earlier snapshot (or it can't be read). currentBase is the basename of
+// the snapshot being rendered (may be "mainnet-latest.json", in which case we
+// resolve it to its real dated target first).
+func (s *server) priorSnapshot(currentBase string) *snapshot.Snapshot {
+	// Resolve mainnet-latest.json to its dated target name for comparison.
+	cur := currentBase
+	if cur == "mainnet-latest.json" {
+		if tgt, err := os.Readlink(filepath.Join(s.snapDir, cur)); err == nil {
+			cur = filepath.Base(tgt)
+		}
+	}
+	entries, err := os.ReadDir(s.snapDir)
+	if err != nil {
+		return nil
+	}
+	var dated []string
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || n == "mainnet-latest.json" || !strings.HasPrefix(n, "mainnet-") || !strings.HasSuffix(n, ".json") {
+			continue
+		}
+		dated = append(dated, n)
+	}
+	// Dated names sort lexicographically == chronologically (YYYY-MM-DD).
+	sort.Strings(dated)
+	var priorName string
+	for _, n := range dated {
+		if n < cur {
+			priorName = n // keep latest-but-before-current
+		}
+	}
+	if priorName == "" {
+		return nil
+	}
+	prior, err := snapshot.Read(filepath.Join(s.snapDir, priorName))
+	if err != nil {
+		return nil
+	}
+	return prior
 }
