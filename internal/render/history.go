@@ -278,50 +278,65 @@ func BuildSentimentMeterVs(s, prior *snapshot.Snapshot) SentimentMeter {
 		pctChange = (netDelta / priorRaw) * 100
 	}
 
-	// Normalise the bucket score to a ~monthly rate so the dial reflects the
-	// PACE of change, not the (variable) gap between snapshots. A -6.7% drop
-	// over 24 days and the same drop over 2 days are very different signals;
-	// the meter buckets (±2% = extremes) are calibrated for a ~30-day window.
-	// The DISPLAYED DeltaPiB / PriorRawPiB below stay as the real absolute
-	// change between the two snapshots; only the score mapping is rate-scaled.
-	scorePct := pctChange
+	// Normalise to a ~monthly rate so the dial reflects the PACE of change,
+	// not the (variable) gap between snapshots. The DISPLAYED DeltaPiB /
+	// PriorRawPiB below stay as the real absolute change between the two
+	// snapshots; only the score mapping is rate-scaled.
+	monthlyPct := pctChange
 	if prior != nil && prior.NetworkTruth != nil {
 		if days := s.GeneratedAt.Sub(prior.GeneratedAt).Hours() / 24; days > 0.5 {
-			scorePct = pctChange * (30.0 / days)
+			monthlyPct = pctChange * (30.0 / days)
 		}
 	}
 
-	// Map scorePct into [0,100]: clamp to [-2, +2] then scale linearly
-	clamp := scorePct
-	if clamp < -2 {
-		clamp = -2
-	}
-	if clamp > 2 {
-		clamp = 2
-	}
-	score := (clamp + 2) / 4 * 100 // -2 -> 0, 0 -> 50, +2 -> 100
-
+	// Bucket the monthly rate. Filecoin routinely sheds a few %/month, so a
+	// steady multi-% monthly decline is "Declining", not "Collapsing".
+	// "Collapsing" / "Booming" are reserved for catastrophic (>= 10%/month)
+	// moves. Bands (monthly % change):
+	//
+	//   <= -10%        Collapsing   (score 0..15)
+	//   -10% .. -1.5%  Declining    (score 15..40)
+	//   -1.5% .. +1.5% Stable       (score 40..60)
+	//   +1.5% .. +10%  Growing      (score 60..85)
+	//   >= +10%        Booming      (score 85..100)
+	var score float64
 	switch {
-	case score <= 15:
-		m.Label = "Collapsing"
-		m.AccentColor = "#D32F2F"
-	case score <= 40:
-		m.Label = "Declining"
-		m.AccentColor = "#D2691E"
-	case score <= 60:
-		m.Label = "Stable"
-		m.AccentColor = "#B8860B"
-	case score <= 85:
-		m.Label = "Growing"
-		m.AccentColor = "#2E8B57"
+	case monthlyPct <= -10:
+		score = mapBand(monthlyPct, -50, -10, 0, 15)
+		m.Label, m.AccentColor = "Collapsing", "#D32F2F"
+	case monthlyPct <= -1.5:
+		score = mapBand(monthlyPct, -10, -1.5, 15, 40)
+		m.Label, m.AccentColor = "Declining", "#D2691E"
+	case monthlyPct < 1.5:
+		score = mapBand(monthlyPct, -1.5, 1.5, 40, 60)
+		m.Label, m.AccentColor = "Stable", "#B8860B"
+	case monthlyPct < 10:
+		score = mapBand(monthlyPct, 1.5, 10, 60, 85)
+		m.Label, m.AccentColor = "Growing", "#2E8B57"
 	default:
-		m.Label = "Booming"
-		m.AccentColor = "#1B5E20"
+		score = mapBand(monthlyPct, 10, 50, 85, 100)
+		m.Label, m.AccentColor = "Booming", "#1B5E20"
 	}
 	m.Score = score
 	m.DeltaPiB = netDelta / piB
 	m.PriorRawPiB = priorRaw / piB
 	return m
+}
+
+// mapBand linearly maps v from input range [inLo, inHi] to output [outLo, outHi],
+// clamping to the output bounds. Used to position the dial within a sentiment band.
+func mapBand(v, inLo, inHi, outLo, outHi float64) float64 {
+	if inHi == inLo {
+		return (outLo + outHi) / 2
+	}
+	t := (v - inLo) / (inHi - inLo)
+	if t < 0 {
+		t = 0
+	}
+	if t > 1 {
+		t = 1
+	}
+	return outLo + t*(outHi-outLo)
 }
 
 func parseBigToFloat(s string) float64 {

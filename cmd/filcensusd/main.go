@@ -322,10 +322,18 @@ func (s *server) renderLatest() error {
 }
 
 // priorSnapshot returns the most recent dated mainnet-YYYY-MM-DD.json snapshot
-// whose filename sorts strictly before currentBase. Returns nil when there is
-// no earlier snapshot (or it can't be read). currentBase is the basename of
-// the snapshot being rendered (may be "mainnet-latest.json", in which case we
-// resolve it to its real dated target first).
+// whose filename sorts strictly before currentBase AND whose raw byte power
+// differs from current's. Returns nil when there is no earlier snapshot (or
+// none can be read). currentBase is the basename of the snapshot being
+// rendered (may be "mainnet-latest.json", in which case we resolve it to its
+// real dated target first).
+//
+// The duplicate-skip matters because Lantern occasionally reads the same
+// power tuple on back-to-back snapshots (same tipset key cached, or the
+// network truly hasn't moved between reads). Diffing the dashboard meter
+// against an identical prior would show "Stable +0.00 PiB" regardless of the
+// real trend, which is misleading. Walking back to the last snapshot with
+// genuinely different raw power gives the meter a meaningful signal.
 func (s *server) priorSnapshot(currentBase string) *snapshot.Snapshot {
 	// Resolve mainnet-latest.json to its dated target name for comparison.
 	cur := currentBase
@@ -348,16 +356,44 @@ func (s *server) priorSnapshot(currentBase string) *snapshot.Snapshot {
 	}
 	// Dated names sort lexicographically == chronologically (YYYY-MM-DD).
 	sort.Strings(dated)
-	var priorName string
-	for _, n := range dated {
-		if n < cur {
-			priorName = n // keep latest-but-before-current
+
+	// Load current to compare raw power.
+	curSnap, err := snapshot.Read(filepath.Join(s.snapDir, cur))
+	if err != nil {
+		curSnap = nil
+	}
+	curRaw := ""
+	if curSnap != nil && curSnap.NetworkTruth != nil {
+		curRaw = curSnap.NetworkTruth.TotalRawBytePower
+	}
+
+	// Walk back from newest to oldest; pick the first prior whose raw byte
+	// power differs from current. If none differ (or current has no power
+	// reading), fall back to the immediate prior.
+	var fallback string
+	for i := len(dated) - 1; i >= 0; i-- {
+		n := dated[i]
+		if n >= cur {
+			continue
+		}
+		if fallback == "" {
+			fallback = n
+		}
+		if curRaw == "" {
+			break // can't compare; use immediate prior
+		}
+		p, err := snapshot.Read(filepath.Join(s.snapDir, n))
+		if err != nil || p == nil || p.NetworkTruth == nil {
+			continue
+		}
+		if p.NetworkTruth.TotalRawBytePower != curRaw {
+			return p
 		}
 	}
-	if priorName == "" {
+	if fallback == "" {
 		return nil
 	}
-	prior, err := snapshot.Read(filepath.Join(s.snapDir, priorName))
+	prior, err := snapshot.Read(filepath.Join(s.snapDir, fallback))
 	if err != nil {
 		return nil
 	}
