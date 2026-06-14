@@ -25,10 +25,6 @@
       <a href="#foc">FoC</a>
       <a href="#methodology">Methodology</a>
     </nav>
-    <div class="header-meta">
-      <span class="net-badge net-{{.Network}}">{{.Network}}</span>
-      <span class="snap-time">epoch {{.NetworkTruth.HeadEpoch}} · {{.GeneratedAt.Format "2006-01-02 15:04 MST"}}</span>
-    </div>
   </div>
 </header>
 
@@ -38,7 +34,7 @@
 <section class="hero">
   <p class="kicker">filecoin network intelligence</p>
   <p class="hero-powered">
-    <a class="lantern-attr" href="https://golantern.io/" target="_blank" rel="noopener" title="Network data served by a Lantern light client — pure Go, no filecoin-ffi, end-to-end verified">
+    <a class="lantern-attr" href="https://golantern.io/" target="_blank" rel="noopener" title="Network data served by a Lantern light client. Pure Go, no filecoin-ffi, end-to-end verified.">
       <img class="lantern-attr-mark" src="assets/logos/lantern-mark.svg" alt="" width="14" height="14">
       <span>Powered by <strong>Lantern</strong></span>
     </a>
@@ -47,7 +43,7 @@
     The real state of the network, <span class="hl-pink">not the dashboard version.</span>
   </h1>
   <p class="hero-sub">
-    {{.Network}} chain epoch <strong>{{.NetworkTruth.HeadEpoch}}</strong>. {{.Aggregates.SPsReal}} reported miner IDs collapse into <strong>{{.Aggregates.OperatorsTotal}}</strong> deduplicated operators. The QA / raw ratio is <strong>{{printf "%.1f" .QARawRatio}}×</strong> — most of the network is verified-deal sectors, not committed capacity.
+    Snapshot {{.GeneratedAt.Format "2006-01-02 15:04 MST"}}, {{.Network}} chain epoch <strong>{{.NetworkTruth.HeadEpoch}}</strong>. {{.Aggregates.SPsReal}} reported miner IDs collapse into <strong>{{.Aggregates.OperatorsTotal}}</strong> deduplicated operators. QA / raw ratio is <strong>{{printf "%.1f" .QARawRatio}}×</strong>, so most of the network is verified-deal sectors, not committed capacity.
   </p>
 </section>
 
@@ -165,7 +161,7 @@
   <h3 class="subhead">How the top tiers stack up</h3>
   <div class="tier-bar">
     {{range .OperatorTiers}}
-      <div class="tier-seg" style="width: {{printf "%.2f" .WidthPct}}%; background: {{.Gradient}}" title="{{.Rank}} — {{printf "%.1f" .Share}}% of network (cumulative {{printf "%.1f" .Cumulative}}%)">
+      <div class="tier-seg" style="width: {{printf "%.2f" .WidthPct}}%; background: {{.Gradient}}" title="{{.Rank}}: {{printf "%.1f" .Share}}% of network (cumulative {{printf "%.1f" .Cumulative}}%)">
         <span class="tier-rank">{{.Rank}}: {{printf "%.0f" .Share}}%</span>
       </div>
     {{end}}
@@ -181,7 +177,7 @@
     </div>
   </div>
 
-  <h3 class="subhead">Cumulative power curve — reading the concentration</h3>
+  <h3 class="subhead">Cumulative power curve: reading the concentration</h3>
   <p class="section-lead" style="margin-top: 0.4rem; margin-bottom: 0.8rem;">
     Operators are sorted from largest to smallest along the X axis. The curve plots the cumulative share of network power once you've added that many operators. <strong>The faster the line climbs, the more concentrated the network</strong>. A perfectly equal network would be a straight diagonal; a single-operator network would be a vertical line at the left edge.
   </p>
@@ -214,8 +210,8 @@
       <!-- Threshold lines with annotation -->
       <line class="threshold" x1="60" y1="160" x2="1060" y2="160"/>
       <line class="threshold" x1="60" y1="50"  x2="1060" y2="50" />
-      <text x="68" y="155" class="threshold-label">50% threshold — reached at operator #{{.NarrativeFiftyPctOps}}</text>
-      <text x="68" y="45"  class="threshold-label">90% threshold — reached at operator #{{.NarrativeNinetyPctOps}}</text>
+      <text x="68" y="155" class="threshold-label">50% threshold, reached at operator #{{.NarrativeFiftyPctOps}}</text>
+      <text x="68" y="45"  class="threshold-label">90% threshold, reached at operator #{{.NarrativeNinetyPctOps}}</text>
       <!-- Curve -->
       <g transform="translate(60 20) scale(1 0.75)">
         <path class="lorenz-fill" d="{{lorenzPath .Operators}} L 1000 400 L 0 400 Z"/>
@@ -232,7 +228,7 @@
 <!-- ======================== KEY FINDINGS ======================== -->
 <section class="callout">
   <h3>Key findings</h3>
-  <p>Real raw storage is <strong>{{printf "%.2f" (div .NetworkTruth.RawPiB 1024)}} EiB</strong>. The QAP metric ({{printf "%.1f" (div .NetworkTruth.QAPiB 1024)}} EiB) hides the picture behind a 10× verified-deal multiplier — today the QA / raw ratio is <strong>{{printf "%.1f" .QARawRatio}}×</strong>.</p>
+  <p>Real raw storage is <strong>{{printf "%.2f" (div .NetworkTruth.RawPiB 1024)}} EiB</strong>. The QAP metric ({{printf "%.1f" (div .NetworkTruth.QAPiB 1024)}} EiB) hides the picture behind a 10× verified-deal multiplier. Today the QA / raw ratio is <strong>{{printf "%.1f" .QARawRatio}}×</strong>.</p>
   <p><strong>{{printf "%.1f" .VerifiedSharePct}}% of remaining storage is verified-deal data</strong>. Only {{printf "%.0f" (sub .NetworkTruth.RawPiB .NetworkTruth.VerifiedRawPiBEstimate)}} PiB ({{printf "%.1f" .CCSharePct}}%) is committed capacity (CC).</p>
   {{if .GeoTopCountries}}<p><strong>Geographic concentration:</strong> {{.GeoNarrativeTop2}}. Filecoin's physical footprint is narrower than its miner-ID count suggests.</p>{{end}}
 </section>
@@ -381,7 +377,7 @@
 <section id="chain" class="section">
   <div class="section-header">
     <h2>Chain nodes</h2>
-    <p class="section-lead">Public-facing Lotus, Forest, and Venus full nodes our daemon is currently connected to via libp2p. Lotus and lotus-miner are different things — Lotus is the chain consensus daemon, lotus-miner is the (deprecated) SP daemon.</p>
+    <p class="section-lead">Public-facing Lotus, Forest, and Venus full nodes our daemon is currently connected to via libp2p. Lotus and lotus-miner are different things: Lotus is the chain consensus daemon, lotus-miner is the (deprecated) SP daemon.</p>
   </div>
   {{if .Aggregates.ChainNodesBySW}}
   <div class="dist-grid">
