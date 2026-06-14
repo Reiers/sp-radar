@@ -95,7 +95,7 @@ a:hover { text-decoration: underline; }
 .brand:hover { text-decoration: none; }
 .brand-mark-img { display: block; width: 28px; height: 28px; border-radius: 7px; }
 .brand-name { font-weight: 700; letter-spacing: -0.02em; font-size: 1.05rem; color: var(--text); }
-.header-nav { display: flex; gap: 1rem; flex-wrap: wrap; }
+.header-nav { display: flex; gap: 1rem; flex-wrap: wrap; margin-left: auto; }
 .header-nav a { color: var(--dim); font-size: 0.85rem; font-weight: 500; padding: 0.25rem 0.6rem; border-radius: var(--radius-pill); transition: background 0.15s, color 0.15s; }
 .header-nav a:hover { color: var(--accent); background: rgba(21, 101, 192, 0.08); text-decoration: none; }
 .header-meta { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: var(--dim); padding-right: 0.5rem; }
